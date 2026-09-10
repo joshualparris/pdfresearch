@@ -4,8 +4,10 @@ import csv
 import hashlib
 import json
 import os
+import re
 import statistics
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -22,6 +24,7 @@ from .normalise import (
     sha256_text,
 )
 from .privacy import detect_privacy_flags
+from .pdf_links import file_spec_value, is_relative_file
 from .signals import score_boundary
 
 
@@ -314,6 +317,10 @@ def build_segments(
             classification = classify_segment(sample)
             category, category_reason = classification.category, classification.reason
 
+        if first_page in config.category_overrides:
+            category = config.category_overrides[first_page]
+            category_reason = "config_page_category_override"
+
         canonical_pages = [page.original_page for page in pages]
         segments.append(
             Segment(
@@ -470,11 +477,91 @@ def write_manifests(
     return stats
 
 
+def _set_pdf_key(doc: fitz.Document, xref: int, key: str, value: str) -> None:
+    """Set a nested key even when an intermediate dictionary is indirect."""
+    parts = key.split("/")
+    for index in range(1, len(parts)):
+        prefix = "/".join(parts[:index])
+        kind, target = doc.xref_get_key(xref, prefix)
+        if kind == "xref":
+            return _set_pdf_key(doc, int(target.split()[0]), "/".join(parts[index:]), value)
+    doc.xref_set_key(xref, key, value)
+
+
 def _write_segment_pdf(source_doc: fitz.Document, pages: Sequence[int], path: Path, title: str) -> None:
-    out = fitz.open()
+    # insert_pdf omits some page dictionary entries (including transparency
+    # groups) and can drop orphan widget appearances in merged PDFs. Selecting
+    # pages in a fresh copy retains those original objects without flattening.
+    if source_doc.name and not source_doc.is_dirty and Path(source_doc.name).is_file():
+        out = fitz.open(source_doc.name)
+    else:
+        out = fitz.open(stream=source_doc.tobytes(), filetype="pdf")
     try:
-        for start, end in _contiguous_runs(pages):
-            out.insert_pdf(source_doc, from_page=start - 1, to_page=end - 1, links=True, annots=True)
+        selected = {page - 1 for page in pages}
+        # A split cannot keep a local GoTo destination on an omitted page.
+        # Preserve navigation with an explicit relative link to the source PDF.
+        for page_number in pages:
+            # Read the immutable source: several links may share one indirect
+            # action/file specification, which must not be rebased repeatedly.
+            for link in source_doc[page_number - 1].get_links():
+                action = source_doc.xref_get_key(link["xref"], "A/S")[1]
+                target_file = file_spec_value(source_doc, link["xref"], link.get("file", ""))
+                if action in {"/Launch", "/GoToR"} and is_relative_file(target_file):
+                    if not source_doc.name:
+                        raise ValueError("Relative file links require a saved source PDF")
+                    target = Path(source_doc.name).resolve().parent / target_file
+                    relative = Path(os.path.relpath(target, path.parent.resolve())).as_posix()
+                    kind, value = out.xref_get_key(link["xref"], "A/F")
+                    is_dictionary = kind == "dict" or (
+                        kind == "xref" and out.xref_object(int(value.split()[0])).lstrip().startswith("<<")
+                    )
+                    if is_dictionary:
+                        _set_pdf_key(out, link["xref"], "A/F/F", fitz.get_pdf_str(relative))
+                        _set_pdf_key(out, link["xref"], "A/F/UF", fitz.get_pdf_str(relative))
+                    else:
+                        _set_pdf_key(out, link["xref"], "A/F", fitz.get_pdf_str(relative))
+                if link["kind"] != fitz.LINK_GOTO or link.get("page", -1) < 0:
+                    continue
+                if link["page"] in selected:
+                    continue
+                if not source_doc.name or not Path(source_doc.name).is_file():
+                    raise ValueError("Cross-document links require a saved source PDF")
+                destination_type, destination = out.xref_get_key(link["xref"], "A/D")
+                if destination_type == "null":
+                    destination_type, destination = out.xref_get_key(link["xref"], "Dest")
+                if destination_type != "array":
+                    raise ValueError("Cannot preserve an unresolved cross-document destination")
+                destination, replacements = re.subn(
+                    r"^\[\s*\d+\s+\d+\s+R", f"[{link['page']}", destination, count=1,
+                )
+                if replacements != 1:
+                    raise ValueError("Unexpected cross-document destination array")
+                relative = Path(os.path.relpath(Path(source_doc.name).resolve(), path.parent.resolve())).as_posix()
+                # Keep the original destination's PDF coordinates / view mode.
+                # get_links() loses that detail for several remote destinations.
+                out.xref_set_key(link["xref"], "A", f"<</S/GoToR/D{destination}/F{fitz.get_pdf_str(relative)}>>")
+                out.xref_set_key(link["xref"], "Dest", "null")
+        out.select([page - 1 for page in pages])
+        # select() drops unresolved named links even though they exist in the
+        # original PDF. Keep their original annotation objects and original
+        # (possibly already unresolved) behaviour instead of silently deleting.
+        for offset, page_number in enumerate(pages):
+            source_links = source_doc[page_number - 1].get_links()
+            if not source_links:
+                continue
+            page_xref = out.page_xref(offset)
+            kind, annotations = out.xref_get_key(page_xref, "Annots")
+            if kind == "xref":
+                annotations = out.xref_object(int(annotations.split()[0]))
+            elif kind == "null":
+                annotations = "[]"
+            present = {int(x) for x in re.findall(r"(\d+)\s+\d+\s+R", annotations)}
+            missing = [link["xref"] for link in source_links if link["xref"] not in present]
+            if missing:
+                if not annotations.rstrip().endswith("]"):
+                    raise ValueError("Cannot preserve links in an invalid annotation array")
+                annotations = annotations.rstrip()[:-1] + " " + " ".join(f"{xref} 0 R" for xref in missing) + "]"
+                out.xref_set_key(page_xref, "Annots", annotations)
         metadata = out.metadata or {}
         metadata["title"] = title
         metadata["producer"] = "pdfresearch"
@@ -536,6 +623,7 @@ def run_pipeline(
     write_pdfs: bool = True,
     write_text: bool = True,
     write_deduped_pdf: bool = False,
+    segment_first: bool = False,
 ) -> dict[str, object]:
     source = Path(source)
     output_dir = Path(output_dir)
@@ -548,12 +636,45 @@ def run_pipeline(
         min_text_for_text_hash=min_text_for_text_hash,
         rescan=rescan,
     )
+    # Keep duplicate pages as structural evidence and in their source documents.
+    segmentation_records = [replace(r, duplicate_of=None) for r in records] if segment_first else records
     segments, decisions = build_segments(
-        records,
+        segmentation_records,
         boundary_threshold=boundary_threshold,
         config=config,
     )
     stats = write_manifests(output_dir, records, segments, decisions)
+    if segment_first:
+        from .segment_first import build_segment_occurrences
+
+        occurrences, _ = build_segment_occurrences(
+            records, boundary_threshold=boundary_threshold, config=config,
+        )
+        assert [s.canonical_pages for s in segments] == [o.original_pages for o in occurrences]
+        manifest_dir = output_dir / "manifests"
+        (manifest_dir / "document_occurrences.json").write_text(
+            json.dumps([o.to_json() for o in occurrences], indent=2), encoding="utf-8",
+        )
+        locations = {}
+        for segment in segments:
+            stem = f"{segment.category}/{segment.segment_id:04d}_{segment.slug}"
+            for offset, page in enumerate(segment.canonical_pages, 1):
+                locations[page] = (segment.segment_id, stem + ".pdf", offset)
+        with (manifest_dir / "export_page_map.csv").open("w", newline="", encoding="utf-8-sig") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["original_page", "segment_id", "pdf_path", "pdf_page", "canonical_page", "canonical_pdf_path", "canonical_pdf_page"])
+            for record in records:
+                canonical = record.duplicate_of or record.original_page
+                sid, path, offset = locations[record.original_page]
+                _, canonical_path, canonical_offset = locations[canonical]
+                writer.writerow([record.original_page, sid, path, offset, canonical, canonical_path, canonical_offset])
+        stats.update(
+            segmentation_order="segment_first",
+            duplicate_pages_retained_in_exports=True,
+            exported_pages=sum(s.page_count for s in segments),
+            duplicate_document_occurrences=sum(o.duplicate_of_segment_id is not None for o in occurrences),
+        )
+        (manifest_dir / "stats.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
     write_split_outputs(
         source,
         output_dir,

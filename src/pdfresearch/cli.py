@@ -24,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--rescan", action="store_true", help="discard page cache and scan from page 1")
     run.add_argument("--no-pdfs", action="store_true", help="build manifests/text only")
     run.add_argument("--no-text", action="store_true", help="do not write per-segment .txt files")
+    run.add_argument("--segment-first", action="store_true", help="preserve all original pages when splitting; report page and document duplicates without deleting them")
     run.add_argument(
         "--write-deduped-pdf",
         action="store_true",
@@ -57,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
             write_pdfs=not args.no_pdfs,
             write_text=not args.no_text,
             write_deduped_pdf=args.write_deduped_pdf,
+            segment_first=args.segment_first,
         )
     except KeyboardInterrupt:
         print("Interrupted. The page scan cache is resumable; rerun the same command.", file=sys.stderr)
