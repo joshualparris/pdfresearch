@@ -23,7 +23,15 @@ class FixtureGenerator:
         with open(self.out_dir / f"{name}_duplicates.csv", "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
             writer.writerow(["page", "canonical_page", "type", "case_id"])
+            
+            # Write explicitly registered duplicates first
             writer.writerows(self.duplicates)
+            
+            # Write DISTINCT for all other pages to be fully explicit
+            duplicate_pages = {d[0] for d in self.duplicates}
+            for p in range(1, self.current_page):
+                if p not in duplicate_pages:
+                    writer.writerow([p, p, "DISTINCT", "unknown"])
 
     def add_page(self, text: str, header: str = "", footer: str = "", font_size: int = 11, 
                  title: str = "", title_size: int = 24, draw_rect: bool = False, 

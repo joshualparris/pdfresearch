@@ -24,6 +24,8 @@ def test_evaluate_boundaries():
             writer.writerow([6, "UNCERTAIN", "c1", ""])
             # Ignored page (not in predictions, but truth says boundary)
             writer.writerow([7, "BOUNDARY", "c1", ""])
+            # Ignored page (not in predictions, truth says continuation)
+            writer.writerow([8, "CONTINUATION", "c1", ""])
             
         with open(decisions_csv, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
@@ -33,28 +35,25 @@ def test_evaluate_boundaries():
             writer.writerow([4, "True", "6", ""])
             writer.writerow([5, "False", "2", ""])
             writer.writerow([6, "True", "10", ""])  # Should be excluded
-            writer.writerow([7, "False", "-2", ""]) # FN
+            # Page 7 and 8 have NO prediction rows
 
         res = evaluate_boundaries(decisions_csv, labels_csv)
         counts = res["counts"]
-        # Expected counts (page 2 is TP, 3 is TN, 4 is FP, 5 is FN, 7 is FN because it's not predicted boundary)
-        # Wait, the current `evaluate_boundaries` only loops over predictions. 
-        # If a page is in truth but not in predictions, it might be missed as an FN.
-        # Let's fix that conceptually, but for now our evaluation reads from decisions.
-        # Actually, let's just make sure page 7 is in decisions.
+        # Expected counts (page 2 is TP, 3 is TN, 4 is FP, 5 is FN, 
+        # 7 is FN because it's completely missing, 8 is TN because it's completely missing)
         assert counts["tp"] == 1
-        assert counts["tn"] == 1
+        assert counts["tn"] == 2
         assert counts["fp"] == 1
         assert counts["fn"] == 2
         # UNCERTAIN (page 6) should not be counted
-        assert sum(counts.values()) == 5
+        assert sum(counts.values()) == 6
         
         # Precision = TP / (TP + FP) = 1 / (1 + 1) = 0.5
         # Recall = TP / (TP + FN) = 1 / (1 + 2) = 0.333
         # F1 = 2 * (0.5 * 0.333) / (0.5 + 0.333) = 0.4
-        assert res["metrics"]["precision"] == 0.5
-        assert res["metrics"]["recall"] == 0.333
-        assert res["metrics"]["f1"] == 0.4
+        assert round(res["metrics"]["precision"], 3) == 0.5
+        assert round(res["metrics"]["recall"], 3) == 0.333
+        assert round(res["metrics"]["f1"], 3) == 0.4
             
         # Zero denominator test
         with open(labels_csv, "w", newline="", encoding="utf-8-sig") as f:
@@ -115,8 +114,8 @@ def test_evaluate_duplicates():
         
         # Precision = 1 / (1 + 2) = 0.333
         # Recall = 1 / (1 + 1) = 0.500
-        assert exact["precision"] == 0.333
-        assert exact["recall"] == 0.500
+        assert round(exact["precision"], 3) == 0.333
+        assert round(exact["recall"], 3) == 0.500
         
         # Near duplicate: page 5 caught, page 6 missed
         assert near["caught"] == 1

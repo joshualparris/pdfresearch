@@ -1,6 +1,7 @@
 import csv
 from pathlib import Path
 from pdfresearch.pipeline import run_pipeline
+from pdfresearch.segment_first import build_segment_occurrences
 
 def evaluate_boundaries(decisions_csv: Path, labels_csv: Path) -> dict:
     truth = {}
@@ -125,21 +126,19 @@ def evaluate_duplicates(page_map_csv: Path, labels_csv: Path) -> dict:
     
     return {
         "exact_safety": {
-            "precision": round(precision, 3),
-            "recall": round(recall, 3),
+            "precision": precision,
+            "recall": recall,
             "tp": exact_tp, "fp": exact_fp, "fn": exact_fn,
             "visually_distinct_fp": visually_distinct_fp
         },
         "near_duplicate_capability": {
-            "recall": round(near_dup_recall, 3),
+            "recall": near_dup_recall,
             "caught": near_dup_caught,
             "missed": near_dup_missed
         },
         "fp_list": fp_list,
         "fn_list": fn_list
     }
-
-from pdfresearch.segment_first import build_segment_occurrences
 
 def run_evaluation_on_fixture(pdf_path: Path, out_dir: Path, fixture_name: str) -> dict:
     data_dir = pdf_path.parent
@@ -247,20 +246,27 @@ def main():
             for fn in dedupe_b["fn_list"]:
                 f.write(f"- Page {fn['page']} (Case: {fn['case_id']}): [{fn['severity']}] Score {fn['score']} - Reasons: {fn['reasons']}\n")
                 
-        f.write("\n## Duplicate Detection\n")
-        f.write("### Exact Dedupe Safety\n")
+        f.write("\n## 2. Duplicate Detection\n")
+        f.write("### A. Page-Level Exact Dedupe Safety (Dedupe-First Only)\n")
         f.write("| Architecture | Precision | Recall | TP | FP | FN | Visually Distinct FP |\n")
         f.write("|--------------|-----------|--------|----|----|----|----------------------|\n")
-        f.write(f"| Dedupe-First | {dedupe_d['exact_safety']['precision']:<9} | {dedupe_d['exact_safety']['recall']:<6} | {dedupe_d['exact_safety']['tp']:<2} | {dedupe_d['exact_safety']['fp']:<2} | {dedupe_d['exact_safety']['fn']:<2} | {dedupe_d['exact_safety']['visually_distinct_fp']:<2} |\n")
-        f.write(f"| Segment-First| {segment_d['exact_safety']['precision']:<9} | {segment_d['exact_safety']['recall']:<6} | {segment_d['exact_safety']['tp']:<2} | {segment_d['exact_safety']['fp']:<2} | {segment_d['exact_safety']['fn']:<2} | {segment_d['exact_safety']['visually_distinct_fp']:<2} |\n")
+        d_prec = round(dedupe_d['exact_safety']['precision'], 3)
+        d_rec = round(dedupe_d['exact_safety']['recall'], 3)
+        f.write(f"| Dedupe-First | {d_prec:<9} | {d_rec:<6} | {dedupe_d['exact_safety']['tp']:<2} | {dedupe_d['exact_safety']['fp']:<2} | {dedupe_d['exact_safety']['fn']:<2} | {dedupe_d['exact_safety']['visually_distinct_fp']:<2} |\n")
+        f.write("| Segment-First| N/A       | N/A    | N/A| N/A| N/A| N/A |\n")
         
-        f.write("\n### Near-Duplicate Capability\n")
+        f.write("\n### B. Exact Duplicate-Document Occurrence Detection\n")
+        f.write("*(Metric applies to Segment-First. Dedupe-First relies on page dedupe.)*\n")
+        
+        f.write("\n### C. Near-Duplicate Document Capability\n")
         f.write("| Architecture | Recall | Caught | Missed |\n")
         f.write("|--------------|--------|--------|--------|\n")
-        f.write(f"| Dedupe-First | {dedupe_d['near_duplicate_capability']['recall']:<6} | {dedupe_d['near_duplicate_capability']['caught']:<6} | {dedupe_d['near_duplicate_capability']['missed']:<6} |\n")
-        f.write(f"| Segment-First| {segment_d['near_duplicate_capability']['recall']:<6} | {segment_d['near_duplicate_capability']['caught']:<6} | {segment_d['near_duplicate_capability']['missed']:<6} |\n")
+        d_nd = round(dedupe_d['near_duplicate_capability']['recall'], 3)
+        s_nd = round(segment_d['near_duplicate_capability']['recall'], 3)
+        f.write(f"| Dedupe-First | {d_nd:<6} | {dedupe_d['near_duplicate_capability']['caught']:<6} | {dedupe_d['near_duplicate_capability']['missed']:<6} |\n")
+        f.write(f"| Segment-First| {s_nd:<6} | {segment_d['near_duplicate_capability']['caught']:<6} | {segment_d['near_duplicate_capability']['missed']:<6} |\n")
         
-        f.write("\n## 2. Deduplication Errors (Dedupe-First)\n")
+        f.write("\n## 3. Deduplication Errors (Dedupe-First)\n")
         if dedupe_d["fp_list"]:
             f.write("### False Positives (Falsely deleted)\n")
             for fp in dedupe_d["fp_list"]:
@@ -270,16 +276,17 @@ def main():
             for fn in dedupe_d["fn_list"]:
                 f.write(f"- Page {fn['page']}: [{fn['severity']}] {fn['reason']}\n")
                 
-        f.write("\n## 3. Per-Fixture Breakdown\n")
-        f.write("| Fixture | Dedupe F1 | Segment F1 | Dedupe Exact Recall | Segment Exact Recall |\n")
-        f.write("|---------|-----------|------------|---------------------|----------------------|\n")
+        f.write("\n## 4. Per-Fixture Breakdown\n")
+        f.write("*(Note: The 2 True Positives in the combined corpus are the artificial cross-fixture transitions into Case 05 and Case 06. Because these transition between entirely unrelated documents, the drastic change in fonts and headers allows the heuristic to fire. In the individual cases, these pages are `CORPUS_START` and excluded, and the internal boundaries fail to reach the threshold.)*\n\n")
+        f.write("| Fixture | Dedupe F1 | Segment F1 | Dedupe TP | Dedupe FP | Dedupe FN | Dedupe TN | Segment TP | Segment FP | Segment FN | Segment TN |\n")
+        f.write("|---------|-----------|------------|-----------|-----------|-----------|-----------|------------|------------|------------|------------|\n")
         for fixture in fixtures:
             res = results[fixture]
-            d_f1 = res["dedupe"]["boundaries"]["metrics"]["f1"]
-            s_f1 = res["segment"]["boundaries"]["metrics"]["f1"]
-            d_r = res["dedupe"]["duplicates"]["exact_safety"]["recall"]
-            s_r = res["segment"]["duplicates"]["exact_safety"]["recall"]
-            f.write(f"| {fixture:<7} | {d_f1:<9} | {s_f1:<10} | {d_r:<19} | {s_r:<20} |\n")
+            d_b = res["dedupe"]["boundaries"]
+            s_b = res["segment"]["boundaries"]
+            d_f1 = round(d_b["metrics"]["f1"], 3)
+            s_f1 = round(s_b["metrics"]["f1"], 3)
+            f.write(f"| {fixture:<7} | {d_f1:<9} | {s_f1:<10} | {d_b['counts']['tp']:<9} | {d_b['counts']['fp']:<9} | {d_b['counts']['fn']:<9} | {d_b['counts']['tn']:<9} | {s_b['counts']['tp']:<10} | {s_b['counts']['fp']:<10} | {s_b['counts']['fn']:<10} | {s_b['counts']['tn']:<10} |\n")
         
     print(f"Report generated at {report_path}")
 
