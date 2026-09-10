@@ -1,0 +1,20 @@
+# Optional human-review overrides. Page numbers are 1-based original PDF pages.
+
+[boundaries]
+# Always start a new segment before these pages.
+force_before = []
+# Never start a new segment before these pages, even if the heuristic score is high.
+suppress_before = []
+
+[titles]
+# Override the derived title for a segment that starts on a given original page.
+# Example:
+# "1234" = "HRV, Exercise Load and 48-hour Recovery - Third Edition"
+
+[classification]
+# Extra regular expressions applied to the first ~60k characters of a segment.
+# Personal patterns win over reference patterns.
+personal_patterns = []
+reference_patterns = []
+# Example:
+# reference_patterns = ["(?i)some published book title"]
