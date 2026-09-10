@@ -1,6 +1,6 @@
 # Baseline Synthetic Evaluation Report (v1)
 
-- **Evaluated Code SHA**: `7f7533c3c865f19cfdc082a8499f85484bdd370b`
+- **Evaluated Code SHA**: `ae0f54adea52500cbf9a357a20193d34646384e1`
 - **Fixture Version**: `v1.1`
 - **Evaluator Version**: `v1.1`
 
@@ -31,37 +31,42 @@
 - Page 30 (Case: case_12): [HIGH] Score 4.35 - Reasons: running_header_changes|font_signature_changes|strong_title_typography|cover_like_page
 - Page 31 (Case: case_12): [HIGH] Score 0.3 - Reasons: running_header_continues|strong_title_typography|cover_like_page|strong_continuity_bundle
 
-## Duplicate Detection
-### Exact Dedupe Safety
+## 2. Duplicate Detection
+### A. Page-Level Exact Dedupe Safety (Dedupe-First Only)
 | Architecture | Precision | Recall | TP | FP | FN | Visually Distinct FP |
 |--------------|-----------|--------|----|----|----|----------------------|
 | Dedupe-First | 0.5       | 1.0    | 3  | 3  | 0  | 1  |
-| Segment-First| 0.0       | 0.0    | 0  | 0  | 3  | 0  |
+| Segment-First| N/A       | N/A    | N/A| N/A| N/A| N/A |
 
-### Near-Duplicate Capability
+### B. Exact Duplicate-Document Occurrence Detection
+*(Metric applies to Segment-First. Dedupe-First relies on page dedupe.)*
+
+### C. Near-Duplicate Document Capability
 | Architecture | Recall | Caught | Missed |
 |--------------|--------|--------|--------|
 | Dedupe-First | 0.0    | 0      | 2      |
 | Segment-First| 0.0    | 0      | 2      |
 
-## 2. Deduplication Errors (Dedupe-First)
+## 3. Deduplication Errors (Dedupe-First)
 ### False Positives (Falsely deleted)
 - Page 8: [CRITICAL] Falsely deduped visually distinct page
 - Page 22: [HIGH] Falsely deduped distinct page
 - Page 25: [HIGH] Falsely deduped distinct page
 
-## 3. Per-Fixture Breakdown
-| Fixture | Dedupe F1 | Segment F1 | Dedupe Exact Recall | Segment Exact Recall |
-|---------|-----------|------------|---------------------|----------------------|
-| case_01 | 0.0       | 0.0        | 0.0                 | 0.0                  |
-| case_02 | 0.0       | 0.0        | 0.0                 | 0.0                  |
-| case_03 | 0.0       | 0.0        | 0.0                 | 0.0                  |
-| case_04 | 0.0       | 0.0        | 1.0                 | 0.0                  |
-| case_05 | 0.0       | 0.0        | 1.0                 | 0.0                  |
-| case_06 | 0.0       | 0.0        | 0.0                 | 0.0                  |
-| case_07 | 0.0       | 0.0        | 0.0                 | 0.0                  |
-| case_08 | 0.0       | 0.0        | 0.0                 | 0.0                  |
-| case_09 | 0.0       | 0.0        | 0.0                 | 0.0                  |
-| case_10 | 0.0       | 0.0        | 0.0                 | 0.0                  |
-| case_11 | 0.0       | 0.0        | 0.0                 | 0.0                  |
-| case_12 | 0.0       | 0.0        | 0.0                 | 0.0                  |
+## 4. Per-Fixture Breakdown
+*(Note: The 2 True Positives in the combined corpus are the artificial cross-fixture transitions into Case 05 and Case 06. Because these transition between entirely unrelated documents, the drastic change in fonts and headers allows the heuristic to fire. In the individual cases, these pages are `CORPUS_START` and excluded, and the internal boundaries fail to reach the threshold.)*
+
+| Fixture | Dedupe F1 | Segment F1 | Dedupe TP | Dedupe FP | Dedupe FN | Dedupe TN | Segment TP | Segment FP | Segment FN | Segment TN |
+|---------|-----------|------------|-----------|-----------|-----------|-----------|------------|------------|------------|------------|
+| case_01 | 0.0       | 0.0        | 0         | 0         | 0         | 2         | 0          | 0          | 0          | 2          |
+| case_02 | 0.0       | 0.0        | 0         | 0         | 1         | 1         | 0          | 0          | 1          | 1          |
+| case_03 | 0.0       | 0.0        | 0         | 0         | 1         | 0         | 0          | 0          | 1          | 0          |
+| case_04 | 0.0       | 0.0        | 0         | 0         | 0         | 1         | 0          | 0          | 0          | 1          |
+| case_05 | 0.0       | 0.0        | 0         | 0         | 1         | 2         | 0          | 0          | 1          | 2          |
+| case_06 | 0.0       | 0.0        | 0         | 0         | 1         | 2         | 0          | 0          | 1          | 2          |
+| case_07 | 0.0       | 0.0        | 0         | 0         | 0         | 2         | 0          | 0          | 0          | 2          |
+| case_08 | 0.0       | 0.0        | 0         | 0         | 1         | 0         | 0          | 0          | 1          | 0          |
+| case_09 | 0.0       | 0.0        | 0         | 0         | 0         | 1         | 0          | 0          | 0          | 1          |
+| case_10 | 0.0       | 0.0        | 0         | 0         | 1         | 0         | 0          | 0          | 1          | 0          |
+| case_11 | 0.0       | 0.0        | 0         | 0         | 0         | 1         | 0          | 0          | 0          | 1          |
+| case_12 | 0.0       | 0.0        | 0         | 0         | 1         | 0         | 0          | 0          | 1          | 0          |
