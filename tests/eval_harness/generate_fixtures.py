@@ -1,5 +1,4 @@
 import csv
-import json
 from pathlib import Path
 import fitz  # PyMuPDF
 
@@ -57,114 +56,124 @@ class FixtureGenerator:
         return p
         
     def add_boundary(self, page: int, label: str, case_id: str, notes: str):
+        if page == 1:
+            label = "CORPUS_START"
         self.boundaries.append([page, label, case_id, notes])
         
     def add_duplicate(self, page: int, canonical_page: int, dup_type: str, case_id: str):
         self.duplicates.append([page, canonical_page, dup_type, case_id])
 
-def generate_all_fixtures(out_dir: Path):
-    # We will generate one combined corpus, and we could also generate individual ones if needed.
-    # To keep it simple, we generate one combined synthetic corpus with all cases, 
-    # since we want to test boundaries between different cases too.
-    
-    gen = FixtureGenerator(out_dir)
-    
-    # CASE 1: Chapter heading that is not a boundary
+def generate_case_1(gen: FixtureGenerator):
     c1_p1 = gen.add_page("Doc Start", title="Report A")
-    gen.add_boundary(c1_p1, "BOUNDARY", "case_1", "Doc start")
+    gen.add_boundary(c1_p1, "CORPUS_START", "case_01", "Doc start")
     c1_p2 = gen.add_page("Body", header="Report A", footer="Page 2")
-    gen.add_boundary(c1_p2, "CONTINUATION", "case_1", "Body")
+    gen.add_boundary(c1_p2, "CONTINUATION", "case_01", "Body")
     c1_p3 = gen.add_page("Chapter Body", header="Report A", title="Chapter 2", footer="Page 3")
-    gen.add_boundary(c1_p3, "CONTINUATION", "case_1", "Chapter heading")
-    
-    # CASE 2: Same template/header but genuine boundary
+    gen.add_boundary(c1_p3, "CONTINUATION", "case_01", "Chapter heading")
+
+def generate_case_2(gen: FixtureGenerator):
     c2_p1 = gen.add_page("Doc B", header="COMPANY TEMPLATE", title="Report B")
-    gen.add_boundary(c2_p1, "BOUNDARY", "case_2", "New report same template")
+    gen.add_boundary(c2_p1, "CORPUS_START" if gen.current_page == 2 else "BOUNDARY", "case_02", "New report same template")
     c2_p2 = gen.add_page("Body B", header="COMPANY TEMPLATE")
-    gen.add_boundary(c2_p2, "CONTINUATION", "case_2", "Body B")
+    gen.add_boundary(c2_p2, "CONTINUATION", "case_02", "Body B")
     c2_p3 = gen.add_page("Doc C", header="COMPANY TEMPLATE", title="Report C")
-    gen.add_boundary(c2_p3, "BOUNDARY", "case_2", "Another new report same template")
-    
-    # CASE 3: Same text but different embedded image/signature
+    gen.add_boundary(c2_p3, "BOUNDARY", "case_02", "Another new report same template")
+
+def generate_case_3(gen: FixtureGenerator):
     form_text = "Standard Form Application\nName: John Doe\nSign below:"
     c3_p1 = gen.add_page(form_text, draw_rect=True)
-    gen.add_boundary(c3_p1, "BOUNDARY", "case_3", "Form 1")
+    gen.add_boundary(c3_p1, "CORPUS_START" if gen.current_page == 2 else "BOUNDARY", "case_03", "Form 1")
     c3_p2 = gen.add_page(form_text, draw_circle=True)
-    gen.add_boundary(c3_p2, "BOUNDARY", "case_3", "Form 2")
-    gen.add_duplicate(c3_p2, c3_p1, "SAME_TEXT_VISUALLY_DISTINCT", "case_3")
-    
-    # CASE 4: Exact repeated page legitimately occurring twice inside one document
+    gen.add_boundary(c3_p2, "BOUNDARY", "case_03", "Form 2")
+    gen.add_duplicate(c3_p2, c3_p1, "SAME_TEXT_VISUALLY_DISTINCT", "case_03")
+
+def generate_case_4(gen: FixtureGenerator):
     c4_p1 = gen.add_page("Important Notice", title="Notice")
-    gen.add_boundary(c4_p1, "BOUNDARY", "case_4", "Doc start")
+    gen.add_boundary(c4_p1, "CORPUS_START" if gen.current_page == 2 else "BOUNDARY", "case_04", "Doc start")
     c4_p2 = gen.add_page("Important Notice", title="Notice")
-    gen.add_boundary(c4_p2, "CONTINUATION", "case_4", "Repeated page in doc")
-    gen.add_duplicate(c4_p2, c4_p1, "EXACT_DUPLICATE", "case_4")
-    
-    # CASE 5: Exact repeated whole document
+    gen.add_boundary(c4_p2, "CONTINUATION", "case_04", "Repeated page in doc")
+    gen.add_duplicate(c4_p2, c4_p1, "EXACT_DUPLICATE", "case_04")
+
+def generate_case_5(gen: FixtureGenerator):
     c5_p1 = gen.add_page("Doc X Start", title="Document X", footer="1")
-    gen.add_boundary(c5_p1, "BOUNDARY", "case_5", "Doc X start")
+    gen.add_boundary(c5_p1, "CORPUS_START" if gen.current_page == 2 else "BOUNDARY", "case_05", "Doc X start")
     c5_p2 = gen.add_page("Doc X Body", footer="2")
-    gen.add_boundary(c5_p2, "CONTINUATION", "case_5", "Doc X body")
-    
+    gen.add_boundary(c5_p2, "CONTINUATION", "case_05", "Doc X body")
     c5_p3 = gen.add_page("Doc X Start", title="Document X", footer="1")
-    gen.add_boundary(c5_p3, "BOUNDARY", "case_5", "Doc X dup start")
-    gen.add_duplicate(c5_p3, c5_p1, "EXACT_DUPLICATE", "case_5")
+    gen.add_boundary(c5_p3, "BOUNDARY", "case_05", "Doc X dup start")
+    gen.add_duplicate(c5_p3, c5_p1, "EXACT_DUPLICATE", "case_05")
     c5_p4 = gen.add_page("Doc X Body", footer="2")
-    gen.add_boundary(c5_p4, "CONTINUATION", "case_5", "Doc X dup body")
-    gen.add_duplicate(c5_p4, c5_p2, "EXACT_DUPLICATE", "case_5")
-    
-    # CASE 6: Near-duplicate whole document with one changed footer/date
+    gen.add_boundary(c5_p4, "CONTINUATION", "case_05", "Doc X dup body")
+    gen.add_duplicate(c5_p4, c5_p2, "EXACT_DUPLICATE", "case_05")
+
+def generate_case_6(gen: FixtureGenerator):
     c6_p1 = gen.add_page("Doc Y Start", title="Document Y", footer="Date: 2026-01-01")
-    gen.add_boundary(c6_p1, "BOUNDARY", "case_6", "Doc Y start")
+    gen.add_boundary(c6_p1, "CORPUS_START" if gen.current_page == 2 else "BOUNDARY", "case_06", "Doc Y start")
     c6_p2 = gen.add_page("Doc Y Body", footer="Date: 2026-01-01")
-    gen.add_boundary(c6_p2, "CONTINUATION", "case_6", "Doc Y body")
-    
+    gen.add_boundary(c6_p2, "CONTINUATION", "case_06", "Doc Y body")
     c6_p3 = gen.add_page("Doc Y Start", title="Document Y", footer="Date: 2026-02-01")
-    gen.add_boundary(c6_p3, "BOUNDARY", "case_6", "Doc Y near dup start")
-    gen.add_duplicate(c6_p3, c6_p1, "NEAR_DUPLICATE", "case_6")
+    gen.add_boundary(c6_p3, "BOUNDARY", "case_06", "Doc Y near dup start")
+    gen.add_duplicate(c6_p3, c6_p1, "NEAR_DUPLICATE", "case_06")
     c6_p4 = gen.add_page("Doc Y Body", footer="Date: 2026-02-01")
-    gen.add_boundary(c6_p4, "CONTINUATION", "case_6", "Doc Y near dup body")
-    gen.add_duplicate(c6_p4, c6_p2, "NEAR_DUPLICATE", "case_6")
-    
-    # CASE 7: Blank page inside a document
+    gen.add_boundary(c6_p4, "CONTINUATION", "case_06", "Doc Y near dup body")
+    gen.add_duplicate(c6_p4, c6_p2, "NEAR_DUPLICATE", "case_06")
+
+def generate_case_7(gen: FixtureGenerator):
     c7_p1 = gen.add_page("Doc Z", title="Document Z")
-    gen.add_boundary(c7_p1, "BOUNDARY", "case_7", "Doc Z start")
+    gen.add_boundary(c7_p1, "CORPUS_START" if gen.current_page == 2 else "BOUNDARY", "case_07", "Doc Z start")
     c7_p2 = gen.add_page("")
-    gen.add_boundary(c7_p2, "CONTINUATION", "case_7", "Blank page inside doc")
+    gen.add_boundary(c7_p2, "CONTINUATION", "case_07", "Blank page inside doc")
     c7_p3 = gen.add_page("Doc Z Part 2")
-    gen.add_boundary(c7_p3, "CONTINUATION", "case_7", "Doc Z continuation")
-    
-    # CASE 8: Blank separator between documents
+    gen.add_boundary(c7_p3, "CONTINUATION", "case_07", "Doc Z continuation")
+
+def generate_case_8(gen: FixtureGenerator):
     c8_p1 = gen.add_page("")
-    gen.add_boundary(c8_p1, "BOUNDARY", "case_8", "Blank separator")
+    gen.add_boundary(c8_p1, "CORPUS_START" if gen.current_page == 2 else "BOUNDARY", "case_08", "Blank separator")
     c8_p2 = gen.add_page("Doc W", title="Document W")
-    gen.add_boundary(c8_p2, "BOUNDARY", "case_8", "Doc W start after blank")
-    
-    # CASE 9: Image-only page
+    gen.add_boundary(c8_p2, "BOUNDARY", "case_08", "Doc W start after blank")
+
+def generate_case_9(gen: FixtureGenerator):
     c9_p1 = gen.add_page("Doc V", title="Document V")
-    gen.add_boundary(c9_p1, "BOUNDARY", "case_9", "Doc V start")
+    gen.add_boundary(c9_p1, "CORPUS_START" if gen.current_page == 2 else "BOUNDARY", "case_09", "Doc V start")
     c9_p2 = gen.add_page("", draw_rect=True, draw_circle=True)
-    gen.add_boundary(c9_p2, "CONTINUATION", "case_9", "Image-only page")
-    
-    # CASE 10: Printed page-number reset at a real boundary
+    gen.add_boundary(c9_p2, "CONTINUATION", "case_09", "Image-only page")
+
+def generate_case_10(gen: FixtureGenerator):
     c10_p1 = gen.add_page("Doc U", footer="Page 10")
-    gen.add_boundary(c10_p1, "BOUNDARY", "case_10", "Doc U end")
+    gen.add_boundary(c10_p1, "CORPUS_START" if gen.current_page == 2 else "BOUNDARY", "case_10", "Doc U end")
     c10_p2 = gen.add_page("Doc T", footer="Page 1")
     gen.add_boundary(c10_p2, "BOUNDARY", "case_10", "Doc T start with page reset")
-    
-    # CASE 11: Printed page-number reset inside the same source
+
+def generate_case_11(gen: FixtureGenerator):
     c11_p1 = gen.add_page("Frontmatter", footer="Page iv")
-    gen.add_boundary(c11_p1, "BOUNDARY", "case_11", "Frontmatter")
+    gen.add_boundary(c11_p1, "CORPUS_START" if gen.current_page == 2 else "BOUNDARY", "case_11", "Frontmatter")
     c11_p2 = gen.add_page("Chapter 1", title="Chapter 1", footer="Page 1")
     gen.add_boundary(c11_p2, "CONTINUATION", "case_11", "Page reset inside same source")
-    
-    # CASE 12: Genuine boundary with same geometry/fonts/header family
+
+def generate_case_12(gen: FixtureGenerator):
     c12_p1 = gen.add_page("Memo 1 Content", header="MEMO", title="Memo 1", font_size=12)
-    gen.add_boundary(c12_p1, "BOUNDARY", "case_12", "Memo 1")
+    gen.add_boundary(c12_p1, "CORPUS_START" if gen.current_page == 2 else "BOUNDARY", "case_12", "Memo 1")
     c12_p2 = gen.add_page("Memo 2 Content", header="MEMO", title="Memo 2", font_size=12)
     gen.add_boundary(c12_p2, "BOUNDARY", "case_12", "Memo 2 same geometry")
+
+def generate_all_fixtures(out_dir: Path):
+    cases = [
+        generate_case_1, generate_case_2, generate_case_3, generate_case_4,
+        generate_case_5, generate_case_6, generate_case_7, generate_case_8,
+        generate_case_9, generate_case_10, generate_case_11, generate_case_12
+    ]
     
-    gen.save("combined_corpus")
+    # Generate independent fixtures
+    for i, case_fn in enumerate(cases, 1):
+        gen = FixtureGenerator(out_dir)
+        case_fn(gen)
+        gen.save(f"case_{i:02d}")
+        
+    # Generate combined corpus
+    gen_combined = FixtureGenerator(out_dir)
+    for case_fn in cases:
+        case_fn(gen_combined)
+    gen_combined.save("combined_corpus")
 
 if __name__ == "__main__":
     out_dir = Path(__file__).parent / "data"

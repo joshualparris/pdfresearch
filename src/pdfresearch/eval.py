@@ -15,6 +15,7 @@ def evaluate_boundaries(decisions_csv: Path, labels_csv: Path) -> dict:
     fp_list = []
     fn_list = []
     
+    predictions = {}
     with open(decisions_csv, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -22,13 +23,27 @@ def evaluate_boundaries(decisions_csv: Path, labels_csv: Path) -> dict:
             is_boundary = row["accepted"].lower() == "true"
             score = row["score"]
             reasons = row["reasons"]
+            predictions[page] = {"is_boundary": is_boundary, "score": score, "reasons": reasons}
             
-            label = truth.get(page, "UNCERTAIN")
-            if label == "UNCERTAIN":
-                continue
-                
-            truth_is_boundary = label == "BOUNDARY"
+    # Iterate over TRUTH to catch False Negatives for pages that were deleted (e.g., dedupe-first)
+    for page, label in truth.items():
+        if label == "UNCERTAIN" or label == "CORPUS_START":
+            continue
             
+        truth_is_boundary = label == "BOUNDARY"
+        pred = predictions.get(page)
+        
+        if pred is None:
+            # No decision means it was rejected implicitly (e.g. removed by deduper)
+            if truth_is_boundary:
+                fn += 1
+                fn_list.append({"page": page, "case_id": case_ids.get(page, ""), "score": "N/A", "reasons": "Page deleted before segmentation", "severity": "HIGH"})
+            else:
+                tn += 1
+        else:
+            is_boundary = pred["is_boundary"]
+            score = pred["score"]
+            reasons = pred["reasons"]
             if truth_is_boundary and is_boundary:
                 tp += 1
             elif not truth_is_boundary and is_boundary:
@@ -124,46 +139,93 @@ def evaluate_duplicates(page_map_csv: Path, labels_csv: Path) -> dict:
         "fn_list": fn_list
     }
 
-def main():
-    import subprocess
-    try:
-        git_sha = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
-    except Exception:
-        git_sha = "unknown"
-        
-    fixture_version = "v1.0"
-    evaluator_version = "v1.0"
+from pdfresearch.segment_first import build_segment_occurrences
+
+def run_evaluation_on_fixture(pdf_path: Path, out_dir: Path, fixture_name: str) -> dict:
+    data_dir = pdf_path.parent
+    boundaries_csv = data_dir / f"{fixture_name}_boundaries.csv"
+    duplicates_csv = data_dir / f"{fixture_name}_duplicates.csv"
     
-    root = Path(__file__).parent.parent.parent
-    data_dir = root / "tests" / "eval_harness" / "data"
-    pdf_path = data_dir / "combined_corpus.pdf"
-    boundaries_csv = data_dir / "combined_corpus_boundaries.csv"
-    duplicates_csv = data_dir / "combined_corpus_duplicates.csv"
-    
-    if not pdf_path.exists():
-        print("Fixtures not found. Please run tests/eval_harness/generate_fixtures.py first.")
-        return
-        
-    print("Evaluating Dedupe-First Architecture...")
-    out_dedupe = data_dir / "out_dedupe"
-    run_pipeline(pdf_path, out_dedupe, rescan=True, write_pdfs=False, write_text=False, segment_first=False)
+    out_dedupe = out_dir / "dedupe"
+    run_pipeline(pdf_path, out_dedupe, rescan=True, write_pdfs=False, write_text=False)
     dedupe_b = evaluate_boundaries(out_dedupe / "manifests/boundary_review.csv", boundaries_csv)
     dedupe_d = evaluate_duplicates(out_dedupe / "manifests/page_map.csv", duplicates_csv)
     
-    print("Evaluating Segment-First Architecture...")
-    out_segment = data_dir / "out_segment"
-    run_pipeline(pdf_path, out_segment, rescan=True, write_pdfs=False, write_text=False, segment_first=True)
-    segment_b = evaluate_boundaries(out_segment / "manifests/boundary_review.csv", boundaries_csv)
-    segment_d = evaluate_duplicates(out_segment / "manifests/page_map.csv", duplicates_csv)
+    out_segment = out_dir / "segment"
+    out_segment.mkdir(parents=True, exist_ok=True)
+    
+    # Run the segment_first pipeline directly since it does not export full manifests
+    from pdfresearch.pipeline import scan_pdf
+    import csv
+    records = scan_pdf(pdf_path, out_segment, rescan=True)
+    occurrences, decisions = build_segment_occurrences(records)
+    
+    segment_decisions_csv = out_segment / "boundary_review.csv"
+    with open(segment_decisions_csv, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow(["before_original_page", "score", "accepted", "reasons"])
+        for d in decisions:
+            writer.writerow([d.before_original_page, d.score, d.accepted, "|".join(d.reasons)])
+            
+    segment_page_map_csv = out_segment / "page_map.csv"
+    with open(segment_page_map_csv, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow(["original_page", "is_duplicate"])
+        # For segment_first, it dedupes document occurrences, not single pages.
+        # But we want to test exact dedupe safety on pages. Wait, the user asked to measure
+        # segment-first deduplication safety. Segment-first does not deduplicate pages,
+        # it deduplicates whole segments.
+        # Let's map duplicate segments to pages for scoring duplicate safety.
+        duplicate_pages = set()
+        for occ in occurrences:
+            if occ.duplicate_of_segment_id is not None:
+                duplicate_pages.update(occ.original_pages)
+                
+        for r in records:
+            writer.writerow([r.original_page, str(r.original_page in duplicate_pages)])
+            
+    segment_b = evaluate_boundaries(segment_decisions_csv, boundaries_csv)
+    segment_d = evaluate_duplicates(segment_page_map_csv, duplicates_csv)
+    
+    return {
+        "dedupe": {"boundaries": dedupe_b, "duplicates": dedupe_d},
+        "segment": {"boundaries": segment_b, "duplicates": segment_d}
+    }
+
+def main():
+    fixture_version = "v1.1"
+    evaluator_version = "v1.1"
+    
+    root = Path(__file__).parent.parent.parent
+    data_dir = root / "tests" / "eval_harness" / "data"
+    
+    fixtures = [f"case_{i:02d}" for i in range(1, 13)]
+    
+    results = {}
+    
+    for fixture in fixtures:
+        print(f"Evaluating {fixture}...")
+        pdf_path = data_dir / f"{fixture}.pdf"
+        out_dir = data_dir / "out" / fixture
+        results[fixture] = run_evaluation_on_fixture(pdf_path, out_dir, fixture)
+        
+    print("Evaluating combined_corpus...")
+    pdf_path = data_dir / "combined_corpus.pdf"
+    out_dir = data_dir / "out" / "combined_corpus"
+    combined_results = run_evaluation_on_fixture(pdf_path, out_dir, "combined_corpus")
     
     report_path = root / "eval_baseline_report.md"
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("# Baseline Synthetic Evaluation Report (v1)\n\n")
-        f.write(f"- **Git SHA**: `{git_sha}`\n")
+        f.write(f"- **Evaluated Code SHA**: `{{INSERT_SHA_HERE}}`\n")
         f.write(f"- **Fixture Version**: `{fixture_version}`\n")
         f.write(f"- **Evaluator Version**: `{evaluator_version}`\n\n")
         
-        f.write("## Boundary Detection\n")
+        f.write("## 1. Aggregate Results (Combined Corpus)\n\n")
+        dedupe_b = combined_results["dedupe"]["boundaries"]
+        segment_b = combined_results["segment"]["boundaries"]
+        dedupe_d = combined_results["dedupe"]["duplicates"]
+        segment_d = combined_results["segment"]["duplicates"]
         f.write("| Architecture | Precision | Recall | F1 Score | TP | FP | FN | TN |\n")
         f.write("|--------------|-----------|--------|----------|----|----|----|----|\n")
         f.write(f"| Dedupe-First | {dedupe_b['metrics']['precision']:<9} | {dedupe_b['metrics']['recall']:<6} | {dedupe_b['metrics']['f1']:<8} | {dedupe_b['counts']['tp']:<2} | {dedupe_b['counts']['fp']:<2} | {dedupe_b['counts']['fn']:<2} | {dedupe_b['counts']['tn']:<2} |\n")
@@ -192,7 +254,7 @@ def main():
         f.write(f"| Dedupe-First | {dedupe_d['near_duplicate_capability']['recall']:<6} | {dedupe_d['near_duplicate_capability']['caught']:<6} | {dedupe_d['near_duplicate_capability']['missed']:<6} |\n")
         f.write(f"| Segment-First| {segment_d['near_duplicate_capability']['recall']:<6} | {segment_d['near_duplicate_capability']['caught']:<6} | {segment_d['near_duplicate_capability']['missed']:<6} |\n")
         
-        f.write("\n## Deduplication Errors (Dedupe-First)\n")
+        f.write("\n## 2. Deduplication Errors (Dedupe-First)\n")
         if dedupe_d["fp_list"]:
             f.write("### False Positives (Falsely deleted)\n")
             for fp in dedupe_d["fp_list"]:
@@ -201,6 +263,17 @@ def main():
             f.write("\n### False Negatives (Missed exact duplicate)\n")
             for fn in dedupe_d["fn_list"]:
                 f.write(f"- Page {fn['page']}: [{fn['severity']}] {fn['reason']}\n")
+                
+        f.write("\n## 3. Per-Fixture Breakdown\n")
+        f.write("| Fixture | Dedupe F1 | Segment F1 | Dedupe Exact Recall | Segment Exact Recall |\n")
+        f.write("|---------|-----------|------------|---------------------|----------------------|\n")
+        for fixture in fixtures:
+            res = results[fixture]
+            d_f1 = res["dedupe"]["boundaries"]["metrics"]["f1"]
+            s_f1 = res["segment"]["boundaries"]["metrics"]["f1"]
+            d_r = res["dedupe"]["duplicates"]["exact_safety"]["recall"]
+            s_r = res["segment"]["duplicates"]["exact_safety"]["recall"]
+            f.write(f"| {fixture:<7} | {d_f1:<9} | {s_f1:<10} | {d_r:<19} | {s_r:<20} |\n")
         
     print(f"Report generated at {report_path}")
 
