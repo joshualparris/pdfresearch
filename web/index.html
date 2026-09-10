@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>pdfresearch — large PDF corpus splitter</title>
+  <meta name="description" content="Local-first PDF corpus deduplication, segmentation, privacy flagging and provenance mapping." />
+  <style>
+    :root{color-scheme:dark;--bg:#0b1020;--panel:#121a2f;--muted:#9fb0cb;--text:#eef4ff;--line:#263453;--accent:#84a9ff;--good:#63d19e;--warn:#ffcd70}
+    *{box-sizing:border-box} body{margin:0;font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:linear-gradient(180deg,#08101f,#0d1324 45%,#0b1020);color:var(--text)}
+    main{max-width:1050px;margin:auto;padding:48px 22px 70px}.eyebrow{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:.78rem}
+    h1{font-size:clamp(2.2rem,6vw,4.4rem);line-height:1;margin:.35rem 0 1rem;letter-spacing:-.04em}.lead{font-size:1.15rem;max-width:760px;color:#cad6ea}
+    .pill{display:inline-block;border:1px solid var(--line);padding:7px 11px;border-radius:999px;margin:8px 8px 0 0;color:#cbd8eb;background:#0e172b}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin:30px 0}.card{background:rgba(18,26,47,.88);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 10px 35px rgba(0,0,0,.18)}
+    .metric{font-size:2rem;font-weight:800;letter-spacing:-.03em}.muted{color:var(--muted)} h2{margin-top:42px;font-size:1.45rem} code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace} pre{background:#070c17;border:1px solid var(--line);border-radius:14px;padding:18px;overflow:auto}
+    .flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.step{background:#111a30;border:1px solid var(--line);border-radius:11px;padding:9px 12px}.arrow{color:#7284a2}
+    a{color:#a8c2ff}.notice{border-left:4px solid var(--warn);padding:14px 16px;background:#171827;border-radius:10px;margin:25px 0}.ok{color:var(--good);font-weight:700}.footer{margin-top:55px;color:var(--muted);font-size:.9rem}
+    button{background:#1b2b4c;color:var(--text);border:1px solid #38507b;border-radius:10px;padding:9px 12px;cursor:pointer}button:hover{background:#22375e}
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Local-first corpus tooling</div>
+  <h1>pdfresearch</h1>
+  <p class="lead">A reviewable Python toolkit for recovering source documents from a huge bookmark-less merged PDF — with exact-page duplicate detection, document-boundary inference, privacy flagging, provenance manifests and an independent segment-first audit path.</p>
+  <div><span class="pill">Python + PyMuPDF</span><span class="pill">Deterministic</span><span class="pill">No LLM/API required</span><span class="pill">MIT</span></div>
+
+  <div class="grid">
+    <div class="card"><div class="metric">24,580</div><div class="muted">reference-corpus pages</div></div>
+    <div class="card"><div class="metric">~54%</div><div class="muted">exact duplicates reported by independent analysis</div></div>
+    <div class="card"><div class="metric">2 paths</div><div class="muted">dedupe-first + segment-first audit</div></div>
+    <div class="card"><div class="metric ok">CI ✓</div><div class="muted">tests and linting passed for the second-pass PR</div></div>
+  </div>
+
+  <div class="notice"><strong>Privacy boundary:</strong> the public site and GitHub repo contain code only. Personal PDFs, extracted text, manifests and identifiers should stay local.</div>
+
+  <h2>Pipeline</h2>
+  <div class="flow"><span class="step">Extract</span><span class="arrow">→</span><span class="step">Fingerprint</span><span class="arrow">→</span><span class="step">Infer boundaries</span><span class="arrow">→</span><span class="step">Dedupe</span><span class="arrow">→</span><span class="step">Classify</span><span class="arrow">→</span><span class="step">Privacy flags</span><span class="arrow">→</span><span class="step">Export</span></div>
+
+  <h2>Why two segmentation paths?</h2>
+  <p class="muted">The original production path deduplicates pages before segmentation. The independent review identified a structural risk: legitimate repeated pages can disappear before boundary inference. The second-pass audit keeps the original page stream for segmentation, then fingerprints duplicate document occurrences afterwards. The project now supports A/B validation before choosing one architecture as canonical.</p>
+
+  <h2>Run locally</h2>
+  <pre id="cmd">git clone https://github.com/joshualparris/pdfresearch.git
+cd pdfresearch
+python -m venv .venv
+# activate the venv, then:
+pip install -e .
+pdfresearch run "_DEEP_RESEARCH_.pdf" --output "pdfresearch-output" --no-pdfs</pre>
+  <button onclick="navigator.clipboard.writeText(document.getElementById('cmd').innerText)">Copy command</button>
+
+  <h2>Review targets</h2>
+  <div class="grid">
+    <div class="card"><strong>Boundary precision</strong><p class="muted">Inspect known report starts/ends and near-threshold candidates rather than tuning to a target count.</p></div>
+    <div class="card"><strong>Duplicate safety</strong><p class="muted">Check boilerplate pages, scans, forms and repeated pages inside legitimate source documents.</p></div>
+    <div class="card"><strong>Reference classification</strong><p class="muted">Ensure reports discussing books are not misclassified as the books themselves.</p></div>
+    <div class="card"><strong>Scale</strong><p class="muted">Profile extraction, cache size, memory use and PDF rewriting around 25k pages.</p></div>
+  </div>
+
+  <p><a href="https://github.com/joshualparris/pdfresearch">GitHub repository</a> · <a href="https://github.com/joshualparris/pdfresearch/issues/2">Validation issue #2</a></p>
+  <div class="footer">This web page is a project dashboard only. The actual corpus processing is intentionally local so private source material never needs to be uploaded to this site.</div>
+</main>
+</body>
+</html>
