@@ -47,6 +47,24 @@ pdfresearch run "_DEEP_RESEARCH_.pdf" --output "pdfresearch-output" --no-pdfs
 
 Then inspect `segments.csv`, `boundary_review.csv`, and `privacy_flags.csv`. Re-run with PDFs enabled once the boundary threshold/config looks right.
 
+To preserve source-document structure, use `--segment-first`. This splits the
+original page stream and retains every page, including duplicates, in the exports.
+Duplicate pages are still identified in the manifests; `document_occurrences.json`
+also identifies repeated document occurrences by their page hashes.
+`export_page_map.csv` maps each original page to its exported PDF and page number,
+plus the exported location of its canonical duplicate match. Hash matches indicate
+normalised-text/structural equivalence, not guaranteed visual identity.
+
+```bash
+pdfresearch run "INPUT.pdf" --output "pdfresearch-output" --segment-first
+```
+
+Split export preserves original page objects, including filled widgets and page
+transparency groups. Cross-split page links point back to the original source PDF;
+retain the source and folder layout if those links are needed. See
+[full-corpus validation](docs/FULL_CORPUS_VALIDATION.md) for measured fidelity,
+duplicate-definition reconciliation, and remaining interpretation limits.
+
 Useful options:
 
 ```bash

@@ -99,3 +99,56 @@ def test_end_to_end_scan_dedup_and_forced_split(tmp_path: Path) -> None:
     assert segments[0].canonical_pages == [1, 2]
     assert segments[1].canonical_pages == [4, 5]
     assert any(d.before_original_page == 4 and d.accepted for d in decisions)
+
+
+def test_segment_first_export_preserves_pages_and_resolves_duplicate_locations(tmp_path: Path) -> None:
+    import csv
+    import json
+    from pdfresearch.pipeline import run_pipeline
+
+    pdf = tmp_path / "synthetic.pdf"
+    out = tmp_path / "out"
+    _make_synthetic_pdf(pdf)
+    config = tmp_path / "config.toml"
+    config.write_text('[boundaries]\nforce_before = [4]\n[categories]\n4 = "reference"\n', encoding="utf-8")
+    stats = run_pipeline(pdf, out, min_text_for_text_hash=5,
+                         boundary_threshold=9999, config_path=config, segment_first=True)
+    assert stats["exported_pages"] == 5
+    assert stats["duplicate_pages"] == 1
+    segments = json.loads((out / "manifests/segments.json").read_text())
+    assert [s["canonical_pages"] for s in segments] == [[1, 2, 3], [4, 5]]
+    assert segments[1]["category"] == "reference"
+    with (out / "manifests/export_page_map.csv").open(encoding="utf-8-sig") as handle:
+        mapping = list(csv.DictReader(handle))
+    assert len(mapping) == 5
+    assert mapping[2]["canonical_page"] == "2"
+    assert mapping[2]["canonical_pdf_page"] == "2"
+    for row in mapping:
+        with fitz.open(out / row["pdf_path"]) as doc:
+            assert doc[int(row["pdf_page"]) - 1].get_text().strip()
+        assert (out / row["pdf_path"]).with_suffix(".txt").exists()
+
+
+def test_export_preserves_orphan_form_appearances(tmp_path: Path) -> None:
+    from pdfresearch.pipeline import _write_segment_pdf
+
+    source = tmp_path / "orphan-form.pdf"
+    target = tmp_path / "split.pdf"
+    with fitz.open() as doc:
+        page = doc.new_page()
+        widget = fitz.Widget()
+        widget.field_name = "synthetic_field"
+        widget.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+        widget.field_value = "Synthetic filled value"
+        widget.rect = fitz.Rect(50, 50, 300, 80)
+        page.add_widget(widget)
+        doc.xref_set_key(doc.pdf_catalog(), "AcroForm", "null")
+        doc.save(source)
+    with fitz.open(source) as doc:
+        expected_text = doc[0].get_text()
+        expected_pixels = doc[0].get_pixmap().samples
+        assert "Synthetic filled value" in expected_text
+        _write_segment_pdf(doc, [1], target, "Synthetic form")
+    with fitz.open(target) as doc:
+        assert doc[0].get_text() == expected_text
+        assert doc[0].get_pixmap().samples == expected_pixels
