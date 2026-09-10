@@ -1,0 +1,32 @@
+﻿before_page,label,case_id,notes
+1,BOUNDARY,case_1,Doc start
+2,CONTINUATION,case_1,Body
+3,CONTINUATION,case_1,Chapter heading
+4,BOUNDARY,case_2,New report same template
+5,CONTINUATION,case_2,Body B
+6,BOUNDARY,case_2,Another new report same template
+7,BOUNDARY,case_3,Form 1
+8,BOUNDARY,case_3,Form 2
+9,BOUNDARY,case_4,Doc start
+10,CONTINUATION,case_4,Repeated page in doc
+11,BOUNDARY,case_5,Doc X start
+12,CONTINUATION,case_5,Doc X body
+13,BOUNDARY,case_5,Doc X dup start
+14,CONTINUATION,case_5,Doc X dup body
+15,BOUNDARY,case_6,Doc Y start
+16,CONTINUATION,case_6,Doc Y body
+17,BOUNDARY,case_6,Doc Y near dup start
+18,CONTINUATION,case_6,Doc Y near dup body
+19,BOUNDARY,case_7,Doc Z start
+20,CONTINUATION,case_7,Blank page inside doc
+21,CONTINUATION,case_7,Doc Z continuation
+22,BOUNDARY,case_8,Blank separator
+23,BOUNDARY,case_8,Doc W start after blank
+24,BOUNDARY,case_9,Doc V start
+25,CONTINUATION,case_9,Image-only page
+26,BOUNDARY,case_10,Doc U end
+27,BOUNDARY,case_10,Doc T start with page reset
+28,BOUNDARY,case_11,Frontmatter
+29,CONTINUATION,case_11,Page reset inside same source
+30,BOUNDARY,case_12,Memo 1
+31,BOUNDARY,case_12,Memo 2 same geometry
