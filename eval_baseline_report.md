@@ -1,6 +1,6 @@
 # Baseline Synthetic Evaluation Report (v1)
 
-- **Evaluated Code SHA**: `{INSERT_SHA_HERE}`
+- **Evaluated Code SHA**: `7f7533c3c865f19cfdc082a8499f85484bdd370b`
 - **Fixture Version**: `v1.1`
 - **Evaluator Version**: `v1.1`
 

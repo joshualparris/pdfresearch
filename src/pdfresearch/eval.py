@@ -214,10 +214,16 @@ def main():
     out_dir = data_dir / "out" / "combined_corpus"
     combined_results = run_evaluation_on_fixture(pdf_path, out_dir, "combined_corpus")
     
+    import subprocess
+    try:
+        git_sha = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
+    except Exception:
+        git_sha = "unknown"
+        
     report_path = root / "eval_baseline_report.md"
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("# Baseline Synthetic Evaluation Report (v1)\n\n")
-        f.write(f"- **Evaluated Code SHA**: `{{INSERT_SHA_HERE}}`\n")
+        f.write(f"- **Evaluated Code SHA**: `{git_sha}`\n")
         f.write(f"- **Fixture Version**: `{fixture_version}`\n")
         f.write(f"- **Evaluator Version**: `{evaluator_version}`\n\n")
         
