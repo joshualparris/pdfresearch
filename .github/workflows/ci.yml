@@ -18,3 +18,7 @@ jobs:
         run: pytest
       - name: Ruff
         run: ruff check src tests
+      - name: Clean-Clone Evaluation
+        run: |
+          python tests/eval_harness/generate_fixtures.py
+          python src/pdfresearch/eval.py

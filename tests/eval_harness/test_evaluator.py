@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 import csv
-from pdfresearch.eval import evaluate_boundaries, evaluate_duplicates
+from pdfresearch.eval import evaluate_boundaries, evaluate_duplicates, evaluate_document_occurrences
 
 def test_evaluate_boundaries():
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -134,7 +134,55 @@ def test_evaluate_duplicates():
         assert res_zero["exact_safety"]["recall"] == 0.0
         assert res_zero["near_duplicate_capability"]["recall"] == 0.0
 
+class MockOccurrence:
+    def __init__(self, original_start, duplicate_of_segment_id=None):
+        self.original_start = original_start
+        self.duplicate_of_segment_id = duplicate_of_segment_id
+
+def test_evaluate_document_occurrences():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_dir = Path(tmp_dir)
+        doc_labels_csv = tmp_dir / "doc_labels.csv"
+        
+        with open(doc_labels_csv, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow(["start_page", "canonical_start_page", "type"])
+            # EXACT_DUPLICATE_DOCUMENT correctly predicted
+            writer.writerow([2, 1, "EXACT_DUPLICATE_DOCUMENT"])
+            # EXACT_DUPLICATE_DOCUMENT missed (FN)
+            writer.writerow([3, 1, "EXACT_DUPLICATE_DOCUMENT"])
+            # NEAR_DUPLICATE_DOCUMENT correctly predicted (Caught)
+            writer.writerow([4, 1, "NEAR_DUPLICATE_DOCUMENT"])
+            # NEAR_DUPLICATE_DOCUMENT missed (Missed)
+            writer.writerow([5, 1, "NEAR_DUPLICATE_DOCUMENT"])
+            # DISTINCT incorrectly predicted (FP)
+            writer.writerow([6, 1, "DISTINCT"])
+            
+        occurrences = [
+            MockOccurrence(2, "some_id"),   # TP exact
+            MockOccurrence(3, None),        # FN exact
+            MockOccurrence(4, "some_id"),   # Caught near
+            MockOccurrence(5, None),        # Missed near
+            MockOccurrence(6, "some_id"),   # FP exact
+            MockOccurrence(7, None),        # TN
+        ]
+        
+        res = evaluate_document_occurrences(occurrences, doc_labels_csv)
+        exact = res["exact_safety"]
+        near = res["near_duplicate_capability"]
+        
+        assert exact["tp"] == 1
+        assert exact["fn"] == 1
+        assert exact["fp"] == 1
+        assert round(exact["precision"], 3) == 0.500
+        assert round(exact["recall"], 3) == 0.500
+        
+        assert near["caught"] == 1
+        assert near["missed"] == 1
+        assert round(near["recall"], 3) == 0.500
+
 if __name__ == "__main__":
     test_evaluate_boundaries()
     test_evaluate_duplicates()
+    test_evaluate_document_occurrences()
     print("Self-tests passed.")

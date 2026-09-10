@@ -1,8 +1,8 @@
-# Baseline Synthetic Evaluation Report (v1)
+# Baseline Synthetic Evaluation Report (v1.3)
 
-- **Evaluated Code SHA**: `ae0f54adea52500cbf9a357a20193d34646384e1`
-- **Fixture Version**: `v1.1`
-- **Evaluator Version**: `v1.1`
+- **Evaluated Code SHA**: `0c2517faa67c70aa6670134065a9f9d091cd1e2d`
+- **Fixture Version**: `v1.3`
+- **Evaluator Version**: `v1.3`
 
 ## 1. Aggregate Results (Combined Corpus)
 
@@ -40,12 +40,16 @@
 
 ### B. Exact Duplicate-Document Occurrence Detection
 *(Metric applies to Segment-First. Dedupe-First relies on page dedupe.)*
+| Architecture | Precision | Recall | TP | FP | FN |
+|--------------|-----------|--------|----|----|----|
+| Dedupe-First | N/A       | N/A    | N/A| N/A| N/A|
+| Segment-First| 0.0       | 0.0    | 0  | 0  | 1  |
 
 ### C. Near-Duplicate Document Capability
 | Architecture | Recall | Caught | Missed |
 |--------------|--------|--------|--------|
 | Dedupe-First | 0.0    | 0      | 2      |
-| Segment-First| 0.0    | 0      | 2      |
+| Segment-First| 0.0    | 0      | 1      |
 
 ## 3. Deduplication Errors (Dedupe-First)
 ### False Positives (Falsely deleted)

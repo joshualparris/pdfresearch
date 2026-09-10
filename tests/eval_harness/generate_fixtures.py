@@ -10,6 +10,7 @@ class FixtureGenerator:
         self.current_page = 1
         self.boundaries = []
         self.duplicates = []
+        self.doc_duplicates = []
 
     def save(self, name: str):
         self.doc.save(self.out_dir / f"{name}.pdf")
@@ -32,6 +33,11 @@ class FixtureGenerator:
             for p in range(1, self.current_page):
                 if p not in duplicate_pages:
                     writer.writerow([p, p, "DISTINCT", "unknown"])
+                    
+        with open(self.out_dir / f"{name}_doc_duplicates.csv", "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow(["start_page", "canonical_start_page", "type", "case_id"])
+            writer.writerows(self.doc_duplicates)
 
     def add_page(self, text: str, header: str = "", footer: str = "", font_size: int = 11, 
                  title: str = "", title_size: int = 24, draw_rect: bool = False, 
@@ -70,6 +76,9 @@ class FixtureGenerator:
         
     def add_duplicate(self, page: int, canonical_page: int, dup_type: str, case_id: str):
         self.duplicates.append([page, canonical_page, dup_type, case_id])
+        
+    def add_doc_duplicate(self, start_page: int, canonical_start_page: int, dup_type: str, case_id: str):
+        self.doc_duplicates.append([start_page, canonical_start_page, dup_type, case_id])
 
 def generate_case_1(gen: FixtureGenerator):
     c1_p1 = gen.add_page("Doc Start", title="Report A")
@@ -113,6 +122,7 @@ def generate_case_5(gen: FixtureGenerator):
     c5_p4 = gen.add_page("Doc X Body", footer="2")
     gen.add_boundary(c5_p4, "CONTINUATION", "case_05", "Doc X dup body")
     gen.add_duplicate(c5_p4, c5_p2, "EXACT_DUPLICATE", "case_05")
+    gen.add_doc_duplicate(c5_p3, c5_p1, "EXACT_DUPLICATE_DOCUMENT", "case_05")
 
 def generate_case_6(gen: FixtureGenerator):
     c6_p1 = gen.add_page("Doc Y Start", title="Document Y", footer="Date: 2026-01-01")
@@ -125,6 +135,7 @@ def generate_case_6(gen: FixtureGenerator):
     c6_p4 = gen.add_page("Doc Y Body", footer="Date: 2026-02-01")
     gen.add_boundary(c6_p4, "CONTINUATION", "case_06", "Doc Y near dup body")
     gen.add_duplicate(c6_p4, c6_p2, "NEAR_DUPLICATE", "case_06")
+    gen.add_doc_duplicate(c6_p3, c6_p1, "NEAR_DUPLICATE_DOCUMENT", "case_06")
 
 def generate_case_7(gen: FixtureGenerator):
     c7_p1 = gen.add_page("Doc Z", title="Document Z")

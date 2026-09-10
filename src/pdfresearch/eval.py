@@ -140,10 +140,61 @@ def evaluate_duplicates(page_map_csv: Path, labels_csv: Path) -> dict:
         "fn_list": fn_list
     }
 
+def evaluate_document_occurrences(occurrences: list, doc_labels_csv: Path) -> dict:
+    truth = {}
+    if doc_labels_csv.exists():
+        with open(doc_labels_csv, "r", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                truth[int(row["start_page"])] = row["type"]
+                
+    predicted_duplicates = set()
+    for occ in occurrences:
+        if occ.duplicate_of_segment_id is not None:
+            predicted_duplicates.add(occ.original_start)
+            
+    exact_tp = exact_fn = exact_fp = 0
+    near_dup_caught = near_dup_missed = 0
+    
+    for page, label in truth.items():
+        predicted = page in predicted_duplicates
+        
+        if label == "EXACT_DUPLICATE_DOCUMENT":
+            if predicted:
+                exact_tp += 1
+            else:
+                exact_fn += 1
+        elif label == "NEAR_DUPLICATE_DOCUMENT":
+            if predicted:
+                near_dup_caught += 1
+            else:
+                near_dup_missed += 1
+        elif label == "DISTINCT":
+            if predicted:
+                exact_fp += 1
+                
+    precision = exact_tp / (exact_tp + exact_fp) if (exact_tp + exact_fp) > 0 else 0.0
+    recall = exact_tp / (exact_tp + exact_fn) if (exact_tp + exact_fn) > 0 else 0.0
+    near_dup_recall = near_dup_caught / (near_dup_caught + near_dup_missed) if (near_dup_caught + near_dup_missed) > 0 else 0.0
+    
+    return {
+        "exact_safety": {
+            "precision": precision,
+            "recall": recall,
+            "tp": exact_tp, "fp": exact_fp, "fn": exact_fn
+        },
+        "near_duplicate_capability": {
+            "recall": near_dup_recall,
+            "caught": near_dup_caught,
+            "missed": near_dup_missed
+        }
+    }
+
 def run_evaluation_on_fixture(pdf_path: Path, out_dir: Path, fixture_name: str) -> dict:
     data_dir = pdf_path.parent
     boundaries_csv = data_dir / f"{fixture_name}_boundaries.csv"
     duplicates_csv = data_dir / f"{fixture_name}_duplicates.csv"
+    doc_duplicates_csv = data_dir / f"{fixture_name}_doc_duplicates.csv"
     
     out_dedupe = out_dir / "dedupe"
     run_pipeline(pdf_path, out_dedupe, rescan=True, write_pdfs=False, write_text=False)
@@ -184,7 +235,7 @@ def run_evaluation_on_fixture(pdf_path: Path, out_dir: Path, fixture_name: str) 
             writer.writerow([r.original_page, str(r.original_page in duplicate_pages)])
             
     segment_b = evaluate_boundaries(segment_decisions_csv, boundaries_csv)
-    segment_d = evaluate_duplicates(segment_page_map_csv, duplicates_csv)
+    segment_d = evaluate_document_occurrences(occurrences, doc_duplicates_csv)
     
     return {
         "dedupe": {"boundaries": dedupe_b, "duplicates": dedupe_d},
@@ -192,8 +243,8 @@ def run_evaluation_on_fixture(pdf_path: Path, out_dir: Path, fixture_name: str) 
     }
 
 def main():
-    fixture_version = "v1.1"
-    evaluator_version = "v1.1"
+    fixture_version = "v1.3"
+    evaluator_version = "v1.3"
     
     root = Path(__file__).parent.parent.parent
     data_dir = root / "tests" / "eval_harness" / "data"
@@ -221,7 +272,7 @@ def main():
         
     report_path = root / "eval_baseline_report.md"
     with open(report_path, "w", encoding="utf-8") as f:
-        f.write("# Baseline Synthetic Evaluation Report (v1)\n\n")
+        f.write("# Baseline Synthetic Evaluation Report (v1.3)\n\n")
         f.write(f"- **Evaluated Code SHA**: `{git_sha}`\n")
         f.write(f"- **Fixture Version**: `{fixture_version}`\n")
         f.write(f"- **Evaluator Version**: `{evaluator_version}`\n\n")
@@ -257,6 +308,12 @@ def main():
         
         f.write("\n### B. Exact Duplicate-Document Occurrence Detection\n")
         f.write("*(Metric applies to Segment-First. Dedupe-First relies on page dedupe.)*\n")
+        f.write("| Architecture | Precision | Recall | TP | FP | FN |\n")
+        f.write("|--------------|-----------|--------|----|----|----|\n")
+        s_prec_d = round(segment_d['exact_safety']['precision'], 3)
+        s_rec_d = round(segment_d['exact_safety']['recall'], 3)
+        f.write("| Dedupe-First | N/A       | N/A    | N/A| N/A| N/A|\n")
+        f.write(f"| Segment-First| {s_prec_d:<9} | {s_rec_d:<6} | {segment_d['exact_safety']['tp']:<2} | {segment_d['exact_safety']['fp']:<2} | {segment_d['exact_safety']['fn']:<2} |\n")
         
         f.write("\n### C. Near-Duplicate Document Capability\n")
         f.write("| Architecture | Recall | Caught | Missed |\n")
