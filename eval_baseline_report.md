@@ -1,6 +1,6 @@
 # Baseline Synthetic Evaluation Report (v1.3)
 
-- **Evaluated Code SHA**: `0c2517faa67c70aa6670134065a9f9d091cd1e2d`
+- **Evaluated Code SHA**: `ab22ac5030cd885d1e8a0f9af15ef209df157785`
 - **Fixture Version**: `v1.3`
 - **Evaluator Version**: `v1.3`
 
@@ -45,11 +45,17 @@
 | Dedupe-First | N/A       | N/A    | N/A| N/A| N/A|
 | Segment-First| 0.0       | 0.0    | 0  | 0  | 1  |
 
-### C. Near-Duplicate Document Capability
+### C. Page-Level Near-Duplicate Capability (Dedupe-First)
 | Architecture | Recall | Caught | Missed |
 |--------------|--------|--------|--------|
 | Dedupe-First | 0.0    | 0      | 2      |
+
+### D. Document-Level Near-Duplicate Occurrence Capability (Segment-First)
+| Architecture | Recall | Caught | Missed |
+|--------------|--------|--------|--------|
 | Segment-First| 0.0    | 0      | 1      |
+
+*(Note: Segment-First exact document and near-duplicate document metrics are 0/1 because the initial boundary detection failed to create the necessary document occurrence. Since the documents were not split apart, downstream document deduplication could not identify them.)*
 
 ## 3. Deduplication Errors (Dedupe-First)
 ### False Positives (Falsely deleted)

@@ -315,13 +315,19 @@ def main():
         f.write("| Dedupe-First | N/A       | N/A    | N/A| N/A| N/A|\n")
         f.write(f"| Segment-First| {s_prec_d:<9} | {s_rec_d:<6} | {segment_d['exact_safety']['tp']:<2} | {segment_d['exact_safety']['fp']:<2} | {segment_d['exact_safety']['fn']:<2} |\n")
         
-        f.write("\n### C. Near-Duplicate Document Capability\n")
+        f.write("\n### C. Page-Level Near-Duplicate Capability (Dedupe-First)\n")
         f.write("| Architecture | Recall | Caught | Missed |\n")
         f.write("|--------------|--------|--------|--------|\n")
         d_nd = round(dedupe_d['near_duplicate_capability']['recall'], 3)
-        s_nd = round(segment_d['near_duplicate_capability']['recall'], 3)
         f.write(f"| Dedupe-First | {d_nd:<6} | {dedupe_d['near_duplicate_capability']['caught']:<6} | {dedupe_d['near_duplicate_capability']['missed']:<6} |\n")
+        
+        f.write("\n### D. Document-Level Near-Duplicate Occurrence Capability (Segment-First)\n")
+        f.write("| Architecture | Recall | Caught | Missed |\n")
+        f.write("|--------------|--------|--------|--------|\n")
+        s_nd = round(segment_d['near_duplicate_capability']['recall'], 3)
         f.write(f"| Segment-First| {s_nd:<6} | {segment_d['near_duplicate_capability']['caught']:<6} | {segment_d['near_duplicate_capability']['missed']:<6} |\n")
+        
+        f.write("\n*(Note: Segment-First exact document and near-duplicate document metrics are 0/1 because the initial boundary detection failed to create the necessary document occurrence. Since the documents were not split apart, downstream document deduplication could not identify them.)*\n")
         
         f.write("\n## 3. Deduplication Errors (Dedupe-First)\n")
         if dedupe_d["fp_list"]:
