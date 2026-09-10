@@ -1,0 +1,36 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Local corpus and generated outputs - NEVER COMMIT PERSONAL DATA
+*.pdf
+*.PDF
+*.zip
+*.db
+*.sqlite
+*.sqlite3
+pdfresearch-output/
+output/
+outputs/
+.cache/
+
+# Generated manifests can contain page-level metadata about private documents
+segments.csv
+segments.json
+page_map.csv
+duplicate_groups.csv
+boundary_review.csv
+privacy_flags.csv
+stats.json
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
