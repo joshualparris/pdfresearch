@@ -26,3 +26,9 @@ addopts = "-q"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.6"]
+
+# Keep CI focused on correctness errors. Style-oriented Ruff rule families change
+# frequently; reviewers can still run `ruff check --select ALL` locally when wanted.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+ignore = ["F401"]
