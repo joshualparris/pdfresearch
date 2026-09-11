@@ -16,16 +16,13 @@ The libraries were benchmarked on their raw performance (Runtime and Peak Memory
 
 ## Benchmark Results
 
-> [!WARNING]
-> **Important Note:** The Peak Memory values below were measured using Python's `tracemalloc`, which significantly under-reports total process memory (including native allocations, ML models, and child processes). Real-world system footprints were massively higher (e.g., Docling pushed the system to memory exhaustion).
-
-| Library | Runtime (s) | Speed (pages/s) | Est. 24.5k Corpus Time | Peak Memory (tracemalloc)* | Result Length |
+| Library | Runtime (s) | Speed (pages/s) | Est. 24.5k Corpus Time | Peak Combined RSS | Result Length |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **PyMuPDF4LLM** | 51.46s | ~0.93 | ~7 hours | 258.56 MB | 88,931 chars |
-| **Unstructured** | 67.30s | ~0.71 | ~9.5 hours | 258.14 MB | 88,856 chars |
-| **Docling** | 332.23s | ~0.14 | ~47 hours | 789.86 MB | 88,477 chars |
+| **PyMuPDF4LLM** | 56.42s | ~0.85 | ~8 hours | 966.56 MB | 88,931 chars |
+| **Unstructured** | 34.84s | ~1.38 | ~5 hours | 576.53 MB | 88,856 chars |
+| **Docling** | 389.46s | ~0.12 | ~55 hours | 3,415.57 MB | 88,477 chars |
 
-*Measurements represent Python-tracemalloc metrics, **not** total process memory.*
+*Measurements represent true Peak RSS over the entire subprocess tree. All libraries successfully completed within the 12GB RAM / 8GB Swap systemd limit.*
 
 ### Safe Execution Strategy
 
@@ -43,10 +40,10 @@ systemd-run --user --scope \
 
 ## Evaluation
 
-### 1. Speed and Practicality
-- **PyMuPDF4LLM** is the clear winner for performance, operating at roughly 1 page per second. This is the only library that practically scales to the 24k-page corpus without needing heavy parallelization or external clusters.
-- **Unstructured** performed admirably and remained lightweight in memory.
-- **Docling** is prohibitively slow for a single-node run on a 24k-page corpus. It downloads heavy Hugging Face models (over 700 weights) on initialization and relies on deep-learning vision models for layout analysis, taking roughly 7 seconds per page on CPU.
+### 1. Speed, Memory, and Practicality
+- **Unstructured** is remarkably fast in isolated execution (completing in 34.8s) and remained the most lightweight library at ~576 MB Peak RSS. It easily scales to the full 24k-page corpus.
+- **PyMuPDF4LLM** operates reliably at under 1 page per second. While its real memory footprint (~966 MB) was roughly four times higher than the old flawed `tracemalloc` measurement, it remains highly practical for local extraction without hitting resource limits.
+- **Docling** is prohibitively slow for a single-node run on a 24k-page corpus and extremely memory-hungry. It consumed over 3.4 GB of Peak RSS (plus roughly 2 GB of Swap) just to process 48 pages. It relies on downloading heavy Hugging Face models (over 700 weights) on initialization and running deep-learning vision models for layout analysis, taking over 8 seconds per page on CPU.
 
 ### 2. Distinguishing Visually Different Duplicates
 The text outputs across all three libraries were heavily comparable (all returning ~88-89k characters). 
