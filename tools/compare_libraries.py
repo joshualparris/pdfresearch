@@ -10,12 +10,14 @@ import psutil
 def get_subset_pdf(source_path: Path, temp_path: Path, ranges: list[tuple[int, int]]):
     import pymupdf
     doc = pymupdf.open(source_path)
-    doc2 = pymupdf.open()
+    page_numbers = []
     for start_page, num_pages in ranges:
         end_page = min(start_page + num_pages - 1, doc.page_count - 1)
-        doc2.insert_pdf(doc, from_page=start_page, to_page=end_page)
-    doc2.save(temp_path)
-    doc2.close()
+        page_numbers.extend(range(start_page, end_page + 1))
+    
+    doc.select(page_numbers)
+    # Using garbage=3, deflate=True, clean=False to preserve objects and layout
+    doc.save(temp_path, garbage=3, deflate=True, clean=False)
     doc.close()
 
 def run_pymupdf4llm(pdf_path: Path):
@@ -57,28 +59,51 @@ def benchmark_library_subprocess(name: str, pdf_path: Path):
     cmd = ["/usr/bin/time", "-v", sys.executable, __file__, "--worker", name, "--pdf", str(pdf_path)]
     
     start_time = time.time()
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    
+    peak_combined_rss = 0
+    try:
+        ps_proc = psutil.Process(process.pid)
+        while process.poll() is None:
+            try:
+                rss_sum = ps_proc.memory_info().rss
+                for child in ps_proc.children(recursive=True):
+                    try:
+                        rss_sum += child.memory_info().rss
+                    except psutil.NoSuchProcess:
+                        pass
+                if rss_sum > peak_combined_rss:
+                    peak_combined_rss = rss_sum
+            except psutil.NoSuchProcess:
+                break
+            time.sleep(0.1)
+    except Exception as e:
+        print(f"Error while polling memory: {e}")
+        
+    stdout, stderr = process.communicate()
     end_time = time.time()
     
     sys_mem_after = get_system_memory_info()
     print(f"System memory AFTER: {sys_mem_after}")
     
-    success = (result.returncode == 0)
+    success = (process.returncode == 0)
+    killed_by_oom = (process.returncode == -9 or process.returncode == 137)
     error = None
     if not success:
-        error = f"Process exited with code {result.returncode}. Stderr:\n{result.stderr}"
+        error = f"Process exited with code {process.returncode}. Stderr:\n{stderr}"
+        if killed_by_oom:
+            error = "KILLED BY OOM (SIGKILL). " + error
     
-    peak_memory_mb = 0.0
-    mem_match = re.search(r"Maximum resident set size \(kbytes\):\s+(\d+)", result.stderr)
+    worker_max_rss_mb = 0.0
+    mem_match = re.search(r"Maximum resident set size \(kbytes\):\s+(\d+)", stderr)
     if mem_match:
-        peak_memory_mb = round(int(mem_match.group(1)) / 1024, 2)
+        worker_max_rss_mb = round(int(mem_match.group(1)) / 1024, 2)
         
     result_length = 0
     if success:
         try:
-            # The worker prints a JSON dictionary to stdout as its last output line
-            # It may have printed other stuff, so grab the last line
-            lines = result.stdout.strip().splitlines()
+            lines = stdout.strip().splitlines()
             if lines:
                 worker_out = json.loads(lines[-1])
                 result_length = worker_out.get("length", 0)
@@ -89,8 +114,10 @@ def benchmark_library_subprocess(name: str, pdf_path: Path):
     return {
         "name": name,
         "success": success,
+        "killed_by_oom": killed_by_oom,
         "runtime_seconds": round(end_time - start_time, 2),
-        "peak_memory_mb": peak_memory_mb,
+        "worker_max_rss_mb": worker_max_rss_mb,
+        "peak_combined_tree_rss_mb": round(peak_combined_rss / (1024 * 1024), 2),
         "sys_mem_before_gb": sys_mem_before,
         "sys_mem_after_gb": sys_mem_after,
         "error": error,
@@ -108,10 +135,8 @@ def worker_main(name: str, pdf_path: Path):
         else:
             raise ValueError(f"Unknown library: {name}")
             
-        with open(f"output_{name}.txt", "w", encoding="utf-8") as f:
-            f.write(res.get("text", ""))
-            
-        # Output result length to stdout for the parent process
+        # DO NOT write output_*.txt to disk to protect privacy.
+        # Output result metrics to stdout for the parent process.
         print(json.dumps({"length": res.get("length", 0)}))
     except Exception as e:
         print(f"Worker failed: {e}", file=sys.stderr)

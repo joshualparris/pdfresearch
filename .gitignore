@@ -34,3 +34,4 @@ stats.json
 Thumbs.db
 .vscode/
 .idea/
+output_*.txt
