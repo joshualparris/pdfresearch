@@ -175,11 +175,70 @@ def generate_case_12(gen: FixtureGenerator):
     c12_p2 = gen.add_page("Memo 2 Content", header="MEMO", title="Memo 2", font_size=12)
     gen.add_boundary(c12_p2, "BOUNDARY", "case_12", "Memo 2 same geometry")
 
+def generate_case_13(gen: FixtureGenerator):
+    text = "Form to check\nPlease check the box"
+    c13_p1 = gen.add_page(text)
+    gen.add_boundary(c13_p1, "CORPUS_START" if gen.current_page == 2 else "BOUNDARY", "case_13", "Form Unchecked")
+    p1 = gen.doc[-1]
+    widget = fitz.Widget()
+    widget.rect = fitz.Rect(100, 100, 120, 120)
+    widget.field_type = fitz.PDF_WIDGET_TYPE_CHECKBOX
+    widget.field_name = "checkbox1"
+    widget.field_value = "Off"
+    p1.add_widget(widget)
+    
+    c13_p2 = gen.add_page(text)
+    gen.add_boundary(c13_p2, "BOUNDARY", "case_13", "Form Checked")
+    gen.add_duplicate(c13_p2, c13_p1, "SAME_TEXT_VISUALLY_DISTINCT", "case_13")
+    p2 = gen.doc[-1]
+    widget2 = fitz.Widget()
+    widget2.rect = fitz.Rect(100, 100, 120, 120)
+    widget2.field_type = fitz.PDF_WIDGET_TYPE_CHECKBOX
+    widget2.field_name = "checkbox1"
+    widget2.field_value = "Yes"
+    p2.add_widget(widget2)
+
+def generate_case_14(gen: FixtureGenerator):
+    text = "This is a document with an annotation."
+    c14_p1 = gen.add_page(text)
+    gen.add_boundary(c14_p1, "BOUNDARY", "case_14", "No Annot")
+    
+    c14_p2 = gen.add_page(text)
+    gen.add_boundary(c14_p2, "BOUNDARY", "case_14", "With Annot")
+    gen.add_duplicate(c14_p2, c14_p1, "SAME_TEXT_VISUALLY_DISTINCT", "case_14")
+    p2 = gen.doc[-1]
+    p2.add_highlight_annot(fitz.Rect(50, 50, 200, 70))
+
+def generate_case_15(gen: FixtureGenerator):
+    text = "Geometry test"
+    c15_p1 = gen.add_page(text)
+    gen.add_boundary(c15_p1, "BOUNDARY", "case_15", "Normal Rot")
+    
+    c15_p2 = gen.add_page(text)
+    gen.add_boundary(c15_p2, "BOUNDARY", "case_15", "Rotated")
+    gen.add_duplicate(c15_p2, c15_p1, "SAME_TEXT_VISUALLY_DISTINCT", "case_15")
+    p2 = gen.doc[-1]
+    p2.set_rotation(90)
+    
+def generate_case_16(gen: FixtureGenerator):
+    text = "Drawing test"
+    c16_p1 = gen.add_page(text, draw_rect=True)
+    gen.add_boundary(c16_p1, "BOUNDARY", "case_16", "Rect")
+    
+    c16_p2 = gen.add_page(text, draw_circle=True)
+    gen.add_boundary(c16_p2, "BOUNDARY", "case_16", "Circle")
+    gen.add_duplicate(c16_p2, c16_p1, "SAME_TEXT_VISUALLY_DISTINCT", "case_16")
+
+    c16_p3 = gen.add_page(text, draw_rect=True)
+    gen.add_boundary(c16_p3, "BOUNDARY", "case_16", "Rect identical")
+    gen.add_duplicate(c16_p3, c16_p1, "EXACT_DUPLICATE", "case_16")
+
 def generate_all_fixtures(out_dir: Path):
     cases = [
         generate_case_1, generate_case_2, generate_case_3, generate_case_4,
         generate_case_5, generate_case_6, generate_case_7, generate_case_8,
-        generate_case_9, generate_case_10, generate_case_11, generate_case_12
+        generate_case_9, generate_case_10, generate_case_11, generate_case_12,
+        generate_case_13, generate_case_14, generate_case_15, generate_case_16
     ]
     
     # Generate independent fixtures

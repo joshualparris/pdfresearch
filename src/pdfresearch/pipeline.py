@@ -35,10 +35,10 @@ def _hash_bytes(data: bytes) -> str:
 def _source_identity(path: Path, min_text_for_text_hash: int) -> dict[str, object]:
     stat = path.stat()
     return {
-        "cache_schema_version": CACHE_SCHEMA_VERSION,
-        "source_path": str(path.resolve()),
-        "source_size": stat.st_size,
-        "source_mtime_ns": stat.st_mtime_ns,
+        "schema_version": 2,
+        "file": path.name,
+        "size": stat.st_size,
+        "mtime": stat.st_mtime,
         "min_text_for_text_hash": min_text_for_text_hash,
     }
 
@@ -160,6 +160,56 @@ def _extract_page_features(
     )
 
 
+def _hash_widget(w) -> str:
+    return f"{w.field_name}|{w.field_value}|{w.field_type}|{w.rect}"
+
+def _hash_annot(a) -> str:
+    atype = a.type[0] if isinstance(a.type, (list, tuple)) else a.type
+    return f"{atype}|{a.rect}"
+
+def _verify_exact_duplicate(doc: fitz.Document, page1_idx: int, page2_idx: int) -> bool:
+    """Conservatively verifies if two pages with identical text hashes are actually exact duplicates."""
+    p1 = doc.load_page(page1_idx)
+    p2 = doc.load_page(page2_idx)
+    
+    # 1. Geometry check
+    if p1.rect != p2.rect or p1.rotation != p2.rotation:
+        return False
+        
+    # 2. Widgets check
+    w1 = list(p1.widgets())
+    w2 = list(p2.widgets())
+    if len(w1) != len(w2):
+        return False
+    for wa, wb in zip(w1, w2):
+        if _hash_widget(wa) != _hash_widget(wb):
+            return False
+            
+    # 3. Annotations check
+    a1 = list(p1.annots())
+    a2 = list(p2.annots())
+    if len(a1) != len(a2):
+        return False
+    for aa, ab in zip(a1, a2):
+        if _hash_annot(aa) != _hash_annot(ab):
+            return False
+            
+    # 4. Links check (semantically relevant)
+    l1 = p1.get_links()
+    l2 = p2.get_links()
+    if len(l1) != len(l2):
+        return False
+        
+    # 5. Final fallback: visual render comparison
+    # Render at low DPI for speed but sufficient to catch image/vector replacements
+    pix1 = p1.get_pixmap(dpi=72)
+    pix2 = p2.get_pixmap(dpi=72)
+    if pix1.digest != pix2.digest:
+        return False
+        
+    return True
+
+
 def scan_pdf(
     source: str | Path,
     output_dir: str | Path,
@@ -205,10 +255,10 @@ def scan_pdf(
         if len(existing) > total:
             raise RuntimeError("Cache contains more pages than the current PDF. Re-run with --rescan.")
 
-        seen_hash: dict[str, int] = {}
+        seen_hash: dict[str, list[int]] = {}
         for record in existing:
             if record.duplicate_of is None:
-                seen_hash.setdefault(record.text_hash, record.original_page)
+                seen_hash.setdefault(record.text_hash, []).append(record.original_page)
 
         image_hash_cache: dict[int, str] = {}
         records = list(existing)
@@ -223,11 +273,18 @@ def scan_pdf(
                     min_text_for_text_hash,
                     image_hash_cache,
                 )
-                canonical = seen_hash.get(record.text_hash)
-                if canonical is not None:
-                    record.duplicate_of = canonical
+                
+                canonical_candidates = seen_hash.get(record.text_hash, [])
+                matched_canonical = None
+                for canonical_page in canonical_candidates:
+                    if _verify_exact_duplicate(doc, canonical_page - 1, index):
+                        matched_canonical = canonical_page
+                        break
+                        
+                if matched_canonical is not None:
+                    record.duplicate_of = matched_canonical
                 else:
-                    seen_hash[record.text_hash] = record.original_page
+                    seen_hash.setdefault(record.text_hash, []).append(record.original_page)
 
                 records.append(record)
                 handle.write(json.dumps(record.to_json(), ensure_ascii=False) + "\n")

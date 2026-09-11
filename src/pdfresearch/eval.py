@@ -249,7 +249,7 @@ def main():
     root = Path(__file__).parent.parent.parent
     data_dir = root / "tests" / "eval_harness" / "data"
     
-    fixtures = [f"case_{i:02d}" for i in range(1, 13)]
+    fixtures = [f"case_{i:02d}" for i in range(1, 17)]
     
     results = {}
     
