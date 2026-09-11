@@ -1,11 +1,14 @@
-import time
-import tracemalloc
-import pymupdf
-import pymupdf4llm
-from pathlib import Path
+import argparse
 import json
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+import psutil
 
 def get_subset_pdf(source_path: Path, temp_path: Path, ranges: list[tuple[int, int]]):
+    import pymupdf
     doc = pymupdf.open(source_path)
     doc2 = pymupdf.open()
     for start_page, num_pages in ranges:
@@ -16,6 +19,8 @@ def get_subset_pdf(source_path: Path, temp_path: Path, ranges: list[tuple[int, i
     doc.close()
 
 def run_pymupdf4llm(pdf_path: Path):
+    import pymupdf
+    import pymupdf4llm
     doc = pymupdf.open(pdf_path)
     md_text = pymupdf4llm.to_markdown(doc)
     doc.close()
@@ -34,34 +39,94 @@ def run_unstructured(pdf_path: Path):
     text = "\n\n".join([str(e) for e in elements])
     return {"length": len(text), "preview": text[:500], "text": text}
 
-def benchmark_library(name: str, func, pdf_path: Path):
-    print(f"Benchmarking {name}...")
-    tracemalloc.start()
-    start_time = time.time()
-    try:
-        res = func(pdf_path)
-        success = True
-        error = None
-        with open(f"output_{name}.txt", "w", encoding="utf-8") as f:
-            f.write(res.get("text", ""))
-    except Exception as e:
-        success = False
-        res = {}
-        error = str(e)
-    end_time = time.time()
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
+def get_system_memory_info():
+    vm = psutil.virtual_memory()
+    swap = psutil.swap_memory()
+    return {
+        "ram_used_gb": round((vm.total - vm.available) / (1024**3), 2),
+        "ram_total_gb": round(vm.total / (1024**3), 2),
+        "swap_used_gb": round(swap.used / (1024**3), 2),
+        "swap_total_gb": round(swap.total / (1024**3), 2),
+    }
+
+def benchmark_library_subprocess(name: str, pdf_path: Path):
+    print(f"\n--- Benchmarking {name} ---")
+    sys_mem_before = get_system_memory_info()
+    print(f"System memory BEFORE: {sys_mem_before}")
     
+    cmd = ["/usr/bin/time", "-v", sys.executable, __file__, "--worker", name, "--pdf", str(pdf_path)]
+    
+    start_time = time.time()
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    end_time = time.time()
+    
+    sys_mem_after = get_system_memory_info()
+    print(f"System memory AFTER: {sys_mem_after}")
+    
+    success = (result.returncode == 0)
+    error = None
+    if not success:
+        error = f"Process exited with code {result.returncode}. Stderr:\n{result.stderr}"
+    
+    peak_memory_mb = 0.0
+    mem_match = re.search(r"Maximum resident set size \(kbytes\):\s+(\d+)", result.stderr)
+    if mem_match:
+        peak_memory_mb = round(int(mem_match.group(1)) / 1024, 2)
+        
+    result_length = 0
+    if success:
+        try:
+            # The worker prints a JSON dictionary to stdout as its last output line
+            # It may have printed other stuff, so grab the last line
+            lines = result.stdout.strip().splitlines()
+            if lines:
+                worker_out = json.loads(lines[-1])
+                result_length = worker_out.get("length", 0)
+        except Exception as e:
+            error = f"Failed to parse worker output: {e}"
+            success = False
+            
     return {
         "name": name,
         "success": success,
         "runtime_seconds": round(end_time - start_time, 2),
-        "peak_memory_mb": round(peak / 1024 / 1024, 2),
+        "peak_memory_mb": peak_memory_mb,
+        "sys_mem_before_gb": sys_mem_before,
+        "sys_mem_after_gb": sys_mem_after,
         "error": error,
-        "result_length": res.get("length", 0),
+        "result_length": result_length,
     }
 
+def worker_main(name: str, pdf_path: Path):
+    try:
+        if name == "PyMuPDF4LLM":
+            res = run_pymupdf4llm(pdf_path)
+        elif name == "Docling":
+            res = run_docling(pdf_path)
+        elif name == "Unstructured":
+            res = run_unstructured(pdf_path)
+        else:
+            raise ValueError(f"Unknown library: {name}")
+            
+        with open(f"output_{name}.txt", "w", encoding="utf-8") as f:
+            f.write(res.get("text", ""))
+            
+        # Output result length to stdout for the parent process
+        print(json.dumps({"length": res.get("length", 0)}))
+    except Exception as e:
+        print(f"Worker failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--worker", type=str, help="Run as worker for specific library")
+    parser.add_argument("--pdf", type=str, help="PDF path for worker")
+    args = parser.parse_args()
+    
+    if args.worker:
+        worker_main(args.worker, Path(args.pdf))
+        return
+
     source_pdf = Path("/home/josh/dev/pdfresearch/_DEEP RESEARCH .pdf")
     temp_pdf = Path("temp_comparison.pdf")
     
@@ -83,9 +148,9 @@ def main():
     get_subset_pdf(source_path=source_pdf, temp_path=temp_pdf, ranges=ranges)
     
     results = []
-    results.append(benchmark_library("PyMuPDF4LLM", run_pymupdf4llm, temp_pdf))
-    results.append(benchmark_library("Docling", run_docling, temp_pdf))
-    results.append(benchmark_library("Unstructured", run_unstructured, temp_pdf))
+    results.append(benchmark_library_subprocess("PyMuPDF4LLM", temp_pdf))
+    results.append(benchmark_library_subprocess("Docling", temp_pdf))
+    results.append(benchmark_library_subprocess("Unstructured", temp_pdf))
     
     print("\n--- Benchmark Results ---")
     print(json.dumps(results, indent=2))

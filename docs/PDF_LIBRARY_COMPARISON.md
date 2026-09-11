@@ -16,11 +16,30 @@ The libraries were benchmarked on their raw performance (Runtime and Peak Memory
 
 ## Benchmark Results
 
-| Library | Runtime (s) | Speed (pages/s) | Est. 24.5k Corpus Time | Peak Memory | Result Length |
+> [!WARNING]
+> **Important Note:** The Peak Memory values below were measured using Python's `tracemalloc`, which significantly under-reports total process memory (including native allocations, ML models, and child processes). Real-world system footprints were massively higher (e.g., Docling pushed the system to memory exhaustion).
+
+| Library | Runtime (s) | Speed (pages/s) | Est. 24.5k Corpus Time | Peak Memory (tracemalloc)* | Result Length |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **PyMuPDF4LLM** | 51.46s | ~0.93 | ~7 hours | 258.56 MB | 88,931 chars |
 | **Unstructured** | 67.30s | ~0.71 | ~9.5 hours | 258.14 MB | 88,856 chars |
 | **Docling** | 332.23s | ~0.14 | ~47 hours | 789.86 MB | 88,477 chars |
+
+*Measurements represent Python-tracemalloc metrics, **not** total process memory.*
+
+### Safe Execution Strategy
+
+To accurately measure total process memory footprint (Peak RSS) and prevent future Out-Of-Memory (OOM) situations from crashing critical services, future benchmarks must be run in complete isolation with strict memory constraints. 
+
+Use the following helper command to run the updated benchmarking script inside a constrained `systemd` scope:
+
+```bash
+systemd-run --user --scope \
+  -p MemoryMax=12G \
+  -p MemorySwapMax=8G \
+  bash -lc 'cd /home/josh/dev/pdfresearch-validation && source .venv/bin/activate && python tools/compare_libraries.py'
+```
+
 
 ## Evaluation
 
